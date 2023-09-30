@@ -6,6 +6,10 @@ namespace MemOps {
     // always x86
     constexpr int PAGE_SIZE = 4096;
 
+    static inline bool is_aligned(uintptr_t v, uintptr_t align) {
+        return (v % align == 0);
+    }
+
     static inline uintptr_t align_up(uintptr_t v, uintptr_t align) {
         if (v % align == 0) {
             return v;
@@ -23,6 +27,10 @@ namespace MemOps {
 
     static inline uintptr_t align_page_down(uintptr_t v) {
         return align_down(v, PAGE_SIZE);
+    }
+
+    static inline bool is_page_aligned(uintptr_t v) {
+        return is_aligned(v, PAGE_SIZE);
     }
 
     static inline uintptr_t kilo(uintptr_t v) {

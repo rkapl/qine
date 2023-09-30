@@ -1,29 +1,48 @@
 #pragma once
 
 #include <assert.h>
+#include <cstdint>
+#include <optional>
 #include <stddef.h>
+#include <sys/ucontext.h>
 #include <vector>
 #include <memory>
+#include <ucontext.h>
 
 #include "cpp.h"
+#include "emu.h"
 #include "types.h"
+#include "intrusive_list.h"
+#include "idmap.h"
+#include "segment_descriptor.h"
 
 class Segment;
 
 /* Represents the currently running process, a singleton */
-class Process: private NoCopy, NoMove{
+class Process{
 public:
     static inline Process* current();
     static void initialize();
 
-    Segment *allocate_segment(SegmentId index);
-    Segment *get_segment(SegmentId index);
+    std::shared_ptr<Segment> allocate_segment();
+    SegmentDescriptor* create_segment_descriptor(Access access, const std::shared_ptr<Segment>& mem);
+    void enter_emu();
+
+    void* translate_segmented(uint16_t selector, uint32_t offset, uint32_t size, bool write);
+
+    /* Only the mcontext will actually be used*/
+    ucontext_t startup_context;
 private:
+    NoCopy m_mark_nc;
+    NoMove m_mark_nm;
+
     Process();
     ~Process();
     static Process* m_current;
 
-    std::vector<std::unique_ptr<Segment>> m_segments;
+    IntrusiveList::List<Segment> m_segments;
+    IdMap<SegmentDescriptor> m_segment_descriptors;
+    Emu m_emu;
 };
 
 Process* Process::current() {

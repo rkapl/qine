@@ -1,38 +1,42 @@
 #pragma once
 
+#include <cstdint>
 #include <stdint.h>
 #include <stddef.h>
+#include <vector>
 #include "cpp.h"
 #include "types.h"
+#include "intrusive_list.h"
 
-class Segment: private NoCopy, NoMove {
+/* 
+ * A QNX memory seqment. Backed by mmap. Usually reference counted;
+ */
+class Segment: public IntrusiveList::Node<> {
 public:
-    /* must match the QNX exec format */
-    enum class Access {
-        READ_WRITE = 0,
-        READ_ONLY = 1,
-        EXEC_READ = 2,
-        EXEC_ONLY = 3,
-
-        INVALID = 8,
-    };
-
-    Segment(SegmentId id);
+    Segment();
     ~Segment();
 
-    void allocate(Access access, size_t size, size_t reservation);
-    void change_access(Access access);
-    void grow(size_t new_size);
+    void reserve(size_t reservation);
+    void reserve_at(size_t reservation, uintptr_t addr);
+    void change_access(Access access, size_t offset, size_t size);
+    void grow(Access access, size_t new_size);
+    void skip(size_t skip);
     bool check_bounds(size_t offset, size_t size) const;
     void* pointer(size_t offset, size_t size);
+
+    void* location() const  {
+        return m_location;
+    }
+    size_t size() const {
+        return m_size;
+    }
 private:
     static int map_prot(Access access);
     void update_descriptors();
-
-    SegmentId m_index;
-    Access m_access;
+    
     void *m_location;
     size_t m_size;
-    size_t m_allocated_size;
     size_t m_reserved;
+    // Store bitmap of valid readable areas
+    std::vector<bool> m_bitmap;
 };

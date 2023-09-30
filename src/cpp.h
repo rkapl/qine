@@ -3,6 +3,9 @@
 class NoCopy {
 public:
     NoCopy() = default;
+    NoCopy& operator=(NoCopy&&) = default;
+    NoCopy(NoCopy&&) = default;
+
     NoCopy(const NoCopy&) = delete;
     NoCopy& operator=(const NoCopy&) = delete;
 };
