@@ -2,3 +2,4 @@
 /build
 /slib
 /.cache
+/src/messages/gen/*

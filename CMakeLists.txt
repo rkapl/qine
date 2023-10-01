@@ -16,6 +16,17 @@ add_executable(qine
   src/process.h src/process.cpp
   src/segment.h src/segment.cpp
   src/segment_descriptor.h src/segment_descriptor.cpp
+  src/msg.h src/msg.cpp
+  src/msg/meta.h src/msg/meta.cpp
+  src/msg/dump.h src/msg/dump.cpp
+  ${PROJECT_BINARY_DIR}/gen_msg/proc.h ${PROJECT_BINARY_DIR}/gen_msg/proc.cpp
+)
+
+target_include_directories(qine PRIVATE ${PROJECT_BINARY_DIR} ${PROJECT_SOURCE_DIR}/src)
+
+add_custom_command(
+  OUTPUT ${PROJECT_BINARY_DIR}/gen_msg/proc.cpp ${PROJECT_BINARY_DIR}/gen_msg/proc.h
+  COMMAND ${PROJECT_SOURCE_DIR}/gen_msg_meta.py -d ${PROJECT_BINARY_DIR}/gen_msg -n proc  ${PROJECT_SOURCE_DIR}/src/msg/proc.json
 )
 
 target_compile_features(qine PUBLIC cxx_std_17)

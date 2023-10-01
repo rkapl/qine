@@ -6,7 +6,7 @@
 #include "segment_descriptor.h"
 #include "segment.h"
 
-SegmentDescriptor::SegmentDescriptor(SelectorId id, Access access, const std::shared_ptr<Segment>& seg)
+SegmentDescriptor::SegmentDescriptor(SegmentId id, Access access, const std::shared_ptr<Segment>& seg)
     :m_id(id), m_access(access), m_seg(seg) 
 {
     update_descriptors();
@@ -17,6 +17,7 @@ void SegmentDescriptor::update_descriptors() {
     struct user_desc ud = {0};
     ud.entry_number = m_id;
     ud.base_addr = reinterpret_cast<uintptr_t>(m_seg->location());
+    // TODO: fix big segments
     ud.limit = m_seg->size();
     ud.limit_in_pages = 0;
     ud.seg_32bit = 1;

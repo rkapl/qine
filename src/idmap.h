@@ -11,6 +11,7 @@ public:
     inline IdMap(size_t m_max);
 
     T* alloc();
+    T* alloc_at(size_t i);
     T* get(size_t i);
     size_t index_of(T* element);
 private:
@@ -34,6 +35,14 @@ T* IdMap<T>::alloc() {
         }
     }
     throw std::bad_alloc();
+}
+
+template <class T>
+T* IdMap<T>::alloc_at(size_t i){
+    if (!m_free[i])
+        throw std::bad_alloc();
+    m_free[i] = false;
+    return &m_data[i];
 }
 
 template <class T>

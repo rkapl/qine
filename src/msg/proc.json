@@ -1,0 +1,24 @@
+[
+    {
+        "name": "segment_realloc",
+        "type": "9:3",
+        "fields": [
+            ["sel", "U16"],
+            ["srcpid", "PID"],
+            ["dstpid", "PID"],
+            ["flags", "U16"],
+            ["padd_1", "U16"],
+            ["addr", "U32"],
+            ["nbytes", "U32"]
+        ]
+    },
+
+    {
+        "name": "terminate",
+        "type": "24",
+        "fields": [
+            ["signum", "U16"],
+            ["status", "U32"]
+        ]
+    }
+]

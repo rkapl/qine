@@ -23,8 +23,6 @@
 static_assert(sizeof(lmf_header) == 48);
 static_assert(sizeof(lmf_record) == 6);
 
-// #define DEBUG_SLIB_CODE_SEG 0xca00000
-
 class LoaderFormatException: public std::runtime_error {
 public:
     LoaderFormatException(const char *description): std::runtime_error(description) {}
@@ -173,14 +171,7 @@ void SegmentLoader::alloc_segment(uint32_t id, Access access, uint32_t size) {
     auto proc = Process::current();
     auto seg = proc->allocate_segment();
     auto aligned_size = MemOps::align_page_up(size);
-    #ifdef DEBUG_SLIB_CODE_SEG
-    if (m_slib && id == 0) {
-        seg->reserve_at(aligned_size, DEBUG_SLIB_CODE_SEG);
-    } else 
-    #endif
-    {
-        seg->reserve(aligned_size);
-    }
+    seg->reserve(aligned_size);
     seg->grow(Access::READ_WRITE, aligned_size);
     m_segments[id].segment = seg;
     m_segments[id].final_access = access;
@@ -219,7 +210,7 @@ static void check_value(const char* value, lmf_header_with_record *hdr, uint32_t
         uint32_t offset = got_addr - reinterpret_cast<char*>(hdr);
         fprintf(stderr, "loader: %s (at 0x%x): expected 0x%x, got 0x%x\n", 
             value, offset, expected, got);
-        exit(1);
+        throw LoaderFormatException("loader value mismatch");
     }
 }
 
@@ -232,7 +223,7 @@ static void checked_read(const char* operation, int fd, void *dst, size_t size) 
 
     if (r < size) {
         fprintf(stderr, "%s: EOF\n", operation);
-        exit(1);
+        throw LoaderFormatException("EOF");
     }
 }
 
@@ -240,6 +231,7 @@ static void checked_read(const char* operation, int fd, void *dst, size_t size) 
 // see https://github.com/radareorg/radare2/issues/12664
 
 void load_executable(const char* path, bool slib) {
+    printf("Loading %s\n", path);
     auto fd = UniqueFd(open(path, O_CLOEXEC | O_RDONLY));
     auto proc = Process::current();
 
@@ -343,15 +335,16 @@ void load_executable(const char* path, bool slib) {
         auto seg = loader->get_segment(si);
         auto sd = proc->create_segment_descriptor(segment_types[si], seg);
         if (hdr.header.code_index == si) {
+            FarPointer entry(sd->selector(), loader->m_code_offset);
             if (slib) {
-                mc.gregs[REG_CS] = sd->selector();
+                proc->m_load.entry_slib = entry;
             } else {
-                // push it as args
-                cs = sd->selector();
+                proc->m_load.entry_main = entry;
             }
         }
         if (hdr.header.heap_index == si) {
             mc.gregs[REG_DS] = sd->selector();
+            proc->m_load.data_segment = sd->id();
         }
         if (hdr.header.stack_index == si) {
             mc.gregs[REG_SS] = sd->selector();
@@ -361,14 +354,5 @@ void load_executable(const char* path, bool slib) {
             mc.gregs[REG_FS] = sd->selector();
             mc.gregs[REG_GS] = sd->selector();
         }
-    }
-
-    // setup rest of initial environment
-    if (slib) {
-        mc.gregs[REG_EIP] = loader->m_code_offset;
-    } else {
-        Context ctx(&proc->startup_context);
-        ctx.push_stack(cs);
-        ctx.push_stack(loader->m_code_offset);
     }
 }

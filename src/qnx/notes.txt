@@ -1,0 +1,34 @@
+
+# Magic
+
+Is sort of QNXs TLS I guess. Its position is up to the loader/kernel/proc, but there
+will be always far pointer in the segment 0x78 pointing to MAGIC.
+
+# Early create
+
+Not clear if the process start in SLIB or calls into SLIB. Watcom shows it starting in SLIB, but there is code
+in CRT pointing to the opposite.
+
+Stack upon entry to SLIB looks like this:
+    MAIN
+    MAIN SEG
+    ARGC
+    ARGV1
+    ARGV2 ...
+    NULL
+    ENV1
+    ENV2 ...
+    NULL
+    PID
+    PARENT PID
+    NID (was 1, guess)
+    ??
+    Stack top
+
+Most of the allocation in QNX is done using a SBRK style algorithm, so the values should be placed
+after BSS.
+
+The registers have following meaning on loader <-> slib and slib <-> program interface:
+EBX = curbrk (end of sbrk memory)
+ECX = free memory after curbrk (basically data segmen end - curbrk)
+

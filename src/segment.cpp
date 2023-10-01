@@ -7,9 +7,11 @@
 #include "process.h"
 #include "mem_ops.h"
 
+#define DEBUG_ALL_WRITEABLE
+
 Segment::Segment(): 
     m_location(nullptr), 
-    m_size(0), m_reserved(0)
+    m_paged_size(0), m_reserved(0)
 {
 }
 
@@ -25,7 +27,7 @@ void Segment::reserve(size_t reservation)
         throw std::bad_alloc();
     }
     m_location = l;
-    m_size = 0;
+    m_paged_size = 0;
     m_reserved = reservation;
 }
 
@@ -41,7 +43,7 @@ void Segment::reserve_at(size_t reservation, uintptr_t addr)
         throw std::bad_alloc();
     }
     m_location = l;
-    m_size = 0;
+    m_paged_size = 0;
     m_reserved = reservation;
 }
 
@@ -62,6 +64,10 @@ int Segment::map_prot(Access access)
         default:
             prot = PROT_NONE;
     }
+    #ifdef DEBUG_ALL_WRITEABLE
+    if(prot != PROT_NONE)
+        prot |= PROT_WRITE;
+    #endif
     return prot;
 }
 
@@ -69,12 +75,12 @@ void Segment::grow(Access access, size_t new_size)
 {
     assert(MemOps::is_page_aligned(new_size));
 
-    if (new_size + m_size > m_reserved) {
+    if (new_size + m_paged_size > m_reserved) {
         throw std::bad_alloc();
     }
 
     int prot = map_prot(access);
-    void *start = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(m_location) + m_size);
+    void *start = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(m_location) + m_paged_size);
     void *l = mmap(start, new_size, prot, MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0);
     if (m_location == MAP_FAILED) {
         throw std::bad_alloc();
@@ -84,14 +90,14 @@ void Segment::grow(Access access, size_t new_size)
         m_bitmap.push_back(true);
     }
 
-    m_size += new_size;
+    m_paged_size += new_size;
 }
 
 void Segment::skip(size_t new_size)
 {
     assert(MemOps::is_page_aligned(new_size));
 
-    if (new_size + m_size > m_reserved) {
+    if (new_size + m_paged_size > m_reserved) {
         throw std::bad_alloc();
     }
 
@@ -99,7 +105,7 @@ void Segment::skip(size_t new_size)
         m_bitmap.push_back(false);
     }
 
-    m_size += new_size;
+    m_paged_size += new_size;
 }
 
 void Segment::change_access(Access access, size_t offset, size_t size)
@@ -108,9 +114,14 @@ void Segment::change_access(Access access, size_t offset, size_t size)
     assert(r == 0);
 }
 
+void Segment::set_limit(size_t limit) {
+    assert(limit < m_paged_size);
+    m_limit_size = limit;
+}
+
 bool Segment::check_bounds(size_t offset, size_t size) const
 {
-    bool in_bounds = (offset < m_size) && (size <= m_size - offset);
+    bool in_bounds = (offset < m_paged_size) && (size <= m_paged_size - offset);
     if (!in_bounds) {
         return false;
     }
@@ -136,4 +147,39 @@ Segment::~Segment() {
     if (m_reserved) {
         munmap(m_location, m_reserved);
     }
+}
+
+SegmentAllocator::SegmentAllocator(Segment *seg): 
+    m_segment(seg), 
+    m_offset(seg->paged_size()), 
+    m_last_offset(UINT32_MAX)
+{
+}
+
+SegmentAllocator::~SegmentAllocator() {
+}
+
+void SegmentAllocator::alloc(uint32_t size)
+{
+    m_last_offset = m_offset;
+    m_offset += size;
+    uint32_t needed = MemOps::align_page_up(m_offset);
+    if (needed > m_segment->paged_size()) {
+        m_segment->grow(Access::READ_WRITE, needed - m_segment->paged_size());
+    }
+}
+
+void SegmentAllocator::push_string(const char *str)
+{
+    auto len = strlen(str) + 1;
+    alloc(len);
+    memcpy(ptr(), str, len);
+}
+
+// Info for manipulating the last allocated chunk
+uint32_t SegmentAllocator::offset() const {
+    return m_last_offset;
+}
+void * SegmentAllocator::ptr() const {
+    return m_segment->pointer(offset(), 0);
 }
