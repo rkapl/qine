@@ -153,7 +153,7 @@ void Emu::msg_handle(Msg& msg) {
     Qnx::MsgHeader hdr;
     msg.read_type(&hdr);
 
-#if 1
+#if 0
     uint8_t msg_class = hdr.type >> 8;
     switch (msg_class) {
         case 0: 
@@ -176,7 +176,9 @@ void Emu::msg_handle(Msg& msg) {
         case QnxMsg::proc::terminate::type:
             proc_terminate(msg);
             break;
-
+        case QnxMsg::io::read::type:
+            io_read(msg);
+            break;
         case QnxMsg::io::write::type:
             io_write(msg);
             break;
@@ -236,6 +238,26 @@ void Emu::io_lseek(Msg &ctx) {
     reply.m_status = Qnx::QEOK;
     reply.m_zero = 0;
     reply.m_offset = 0;
+    ctx.write_type(0, &reply);
+}
+
+void Emu::io_read(Msg &ctx) {
+    QnxMsg::io::read msg;
+    ctx.read_type(&msg);
+
+    std::vector<struct iovec> iov;
+    ctx.write_iovec(sizeof(msg), msg.m_nbytes, iov);
+
+    QnxMsg::io::read_reply reply;
+    int r = readv(msg.m_fd, iov.data(), iov.size());
+    reply.m_zero = 0;
+    if (r < 0) {
+        reply.m_status = errno;
+        reply.m_nbytes = 0;
+    } else {
+        reply.m_status = Qnx::QEOK;
+        reply.m_nbytes = r;
+    }
     ctx.write_type(0, &reply);
 }
 

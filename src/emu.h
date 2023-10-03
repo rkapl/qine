@@ -29,8 +29,9 @@ private:
     void proc_segment_realloc(Msg &ctx);
     void proc_terminate(Msg &ctx);
 
-    void io_lseek(Msg &ctx);
+    void io_read(Msg &ctx);
     void io_write(Msg &ctx);
+    void io_lseek(Msg &ctx);
 
     void handler_segv(int sig, siginfo_t *info, void *uctx);
     static void static_handler_segv(int sig, siginfo_t *info, void *uctx);

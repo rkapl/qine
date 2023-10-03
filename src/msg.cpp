@@ -130,15 +130,15 @@ void Msg::write_status(uint16_t status) {
 static const uint8_t garbage_read[256] = {'X'};
 static const uint8_t garbage_write[256] = {0};
 
-void Msg::read_iovec(size_t offset, size_t size, std::vector<iovec>& dst) {
-    auto i = iterate_send();
+void Msg::common_iovec(Iterator i, RwOp op, size_t offset, size_t size, std::vector<iovec>& dst)
+{
     i.skip_to(offset);
 
     while (size != 0) {
         auto slice = i.next(size);
         if (slice.is_empty())
             break;
-        auto ptr = m_proc->translate_segmented(slice.m_ptr, slice.m_size, RwOp::READ);
+        auto ptr = m_proc->translate_segmented(slice.m_ptr, slice.m_size, op);
         struct iovec vec;
         vec.iov_base = ptr;
         vec.iov_len = slice.m_size;
@@ -154,4 +154,12 @@ void Msg::read_iovec(size_t offset, size_t size, std::vector<iovec>& dst) {
         dst.push_back(vec);
         size -= vec.iov_len;
     }
+}
+
+void Msg::read_iovec(size_t offset, size_t size, std::vector<iovec>& dst) {
+    common_iovec(iterate_send(), RwOp::READ, offset, size, dst);
+}
+
+void Msg::write_iovec(size_t offset, size_t size, std::vector<iovec>& dst) {
+    common_iovec(iterate_receive(), RwOp::WRITE, offset, size, dst);
 }

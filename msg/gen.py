@@ -239,7 +239,10 @@ class MetaTransformer(lark.Transformer):
     
     @v_args(inline=True)
     def field(self, name, type, presentation):
-        return Field(str(name), str(type), presentation)
+        return Field(str(name), str(type), presentation=presentation or 'DEFAULT')
+    
+    def p_hex(self, _):
+        return 'HEX'
 
 for input in args.inputs:
     ast = grammar.parse(Path(input).read_text())

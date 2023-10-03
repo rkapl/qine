@@ -32,6 +32,7 @@ public:
     template<class T> void write_type(size_t offset, const T* src);
     void write_status(uint16_t status);
 
+    void write_iovec(size_t offset, size_t size, std::vector<iovec>& dst);
     void read_iovec(size_t offset, size_t size, std::vector<iovec>& dst);
 private:
     // Iterates through chunks, mainting position within chunk
@@ -71,6 +72,7 @@ private:
 
     Iterator iterate_send();
     Iterator iterate_receive();
+    void common_iovec(Iterator it, RwOp op, size_t offset, size_t size, std::vector<iovec>& dst);
 
     Process *m_proc;
 

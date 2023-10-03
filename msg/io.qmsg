@@ -1,3 +1,16 @@
+msg read {
+   @type: 0x103;
+   fd: u16;
+   nbytes: u16;
+   zero: u16; 
+
+   reply {
+        status: u16;
+        nbytes: u16 hex;
+        zero: u16;
+   }
+}
+
 msg write {
    @type: 0x104;
    fd: u16;
@@ -6,8 +19,7 @@ msg write {
 
    reply {
         status: u16;
-        fd: u16;
-        nbytes: u16;
+        nbytes: u16 hex;
         zero: u16;
    }
 }
