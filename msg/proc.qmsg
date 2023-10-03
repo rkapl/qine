@@ -1,0 +1,25 @@
+msg segment_realloc {
+    @type: 9;
+    @subtype: 3;
+    sel: u16;
+    srcpid: pid;
+    dstpid: pid;
+    flags: u16;
+    padd_1: u16;
+    addr: u32;
+    nbytes: u32 hex;
+
+    reply {
+        status: u16;
+        sel: u16;
+        flags: u16;
+        addr: u32;
+        nbytes: u32;
+    }
+}
+
+msg terminate {
+    @type: 18;
+    signum: u16;
+    status: u32;
+}

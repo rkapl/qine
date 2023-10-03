@@ -1,0 +1,27 @@
+msg write {
+   @type: 0x104;
+   fd: u16;
+   nbytes: u16;
+   zero: u16; 
+
+   reply {
+        status: u16;
+        fd: u16;
+        nbytes: u16;
+        zero: u16;
+   }
+}
+
+msg lseek {
+    @type: 0x105;
+    fd: u16;
+    offset: u16;
+    whence: u16;
+    zero: u16;
+
+    reply {
+        status: u16;
+        zero: u16;
+        offset: u32;
+    }
+}

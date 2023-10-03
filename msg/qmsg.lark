@@ -1,0 +1,22 @@
+%import common.ESCAPED_STRING
+%import common.WS
+%import common.SH_COMMENT
+
+%ignore WS
+%ignore SH_COMMENT
+
+NUMBER: /0x[0-9a-zA-Z]+/ | /[0-9]+/
+ID: /[_a-zA-Z][_a-zA-Z0-9]*/
+
+start: def_*
+
+def_kind: "msg" -> kind_msg | "struct" -> kind_struct
+def_: def_kind ID "{" fields "}"
+fields: (field | reply | match_type | match_subtype)*
+
+match_type: "@type" ":" NUMBER ";"
+match_subtype: "@subtype" ":" NUMBER ";"
+
+field: ID ":" ID [presentation] ";"
+presentation: "hex"
+reply: "reply" "{" fields "}"

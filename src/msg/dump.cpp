@@ -10,10 +10,10 @@
 #include <sys/types.h>
 
 static void print_int(FILE *s, const QnxMessageField&f, uint32_t v) {
-    if (f.m_presentation == QnxMessageField::Presentation::DEC) {
-        fprintf(s, "dec %d", v);
+    if (f.m_presentation == QnxMessageField::Presentation::DEFAULT) {
+        fprintf(s, "%d", v);
     } else {
-        fprintf(s, "%x", v);
+        fprintf(s, "%Xh", v);
     }
 }
 
@@ -44,9 +44,9 @@ void QnxMsg::dump_message(FILE* s, const QnxMessageList& list,  Msg& msg) {
         bool type_match = t.m_type == hdr.type;
         bool subtype_match = (t.m_subtype == hdr.subtype);
         switch(t.m_match) {
-            case QnxMessageType::Match::TYPE:
+            case QnxMessageType::Kind::MSG_TYPE:
                 return type_match;
-            case QnxMessageType::Match::SUBTYPE:
+            case QnxMessageType::Kind::MSG_SUBTYPE:
                 return type_match && subtype_match;
             default:
                 return false;

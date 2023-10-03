@@ -22,12 +22,14 @@
 #include "qnx/types.h"
 #include "qnx/msg.h"
 #include "msg/dump.h"
-#include "gen_msg/proc.h"
 #include "segment.h"
 #include "segment_descriptor.h"
 #include "types.h"
 #include "context.h"
 #include "msg.h"
+
+#include <gen_msg/proc.h>
+#include <gen_msg/io.h>
 
 Emu::Emu() {}
 
@@ -69,7 +71,7 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
     bool handled = false;
 
     if (ctx.reg_es() == Qnx::MAGIC_PTR_SELECTOR) {
-        // hack: migrate to LDT
+        // hack: migrate to LDT or patch the code
         ctx.reg_es() = Qnx::MAGIC_PTR_SELECTOR | 4;
         // printf("Migrating to LDT @ %x\n", ctx.reg_eip());
         handled = true;
@@ -151,7 +153,7 @@ void Emu::msg_handle(Msg& msg) {
     Qnx::MsgHeader hdr;
     msg.read_type(&hdr);
 
-#if 0
+#if 1
     uint8_t msg_class = hdr.type >> 8;
     switch (msg_class) {
         case 0: 

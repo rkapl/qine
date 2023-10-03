@@ -5,6 +5,14 @@ project(
   VERSION 0.1
   LANGUAGES CXX)
 
+set(MSG_TYPES io proc)
+list(TRANSFORM MSG_TYPES PREPEND ${PROJECT_SOURCE_DIR}/msg/ OUTPUT_VARIABLE MSG_DEFS)
+list(TRANSFORM MSG_DEFS APPEND .qmsg OUTPUT_VARIABLE MSG_DEFS)
+
+list(TRANSFORM MSG_TYPES PREPEND ${PROJECT_BINARY_DIR}/gen_msg/ OUTPUT_VARIABLE MSG_GEN_PART)
+list(TRANSFORM MSG_GEN_PART APPEND ".cpp" OUTPUT_VARIABLE MSG_SRC)
+list(TRANSFORM MSG_GEN_PART APPEND ".h"  OUTPUT_VARIABLE MSG_H)
+
 add_executable(qine
   src/cpp.h
   src/compiler.h
@@ -19,22 +27,15 @@ add_executable(qine
   src/msg.h src/msg.cpp
   src/msg/meta.h src/msg/meta.cpp
   src/msg/dump.h src/msg/dump.cpp
-  ${PROJECT_BINARY_DIR}/gen_msg/proc.h ${PROJECT_BINARY_DIR}/gen_msg/proc.cpp
-  ${PROJECT_BINARY_DIR}/gen_msg/io.h ${PROJECT_BINARY_DIR}/gen_msg/io.cpp
+  ${MSG_SRC} ${MSG_H}
 )
 
 target_include_directories(qine PRIVATE ${PROJECT_BINARY_DIR} ${PROJECT_SOURCE_DIR}/src)
 
 add_custom_command(
-  OUTPUT ${PROJECT_BINARY_DIR}/gen_msg/proc.cpp ${PROJECT_BINARY_DIR}/gen_msg/proc.h
-  COMMAND ${PROJECT_SOURCE_DIR}/gen_msg_meta.py -d ${PROJECT_BINARY_DIR}/gen_msg -n proc  ${PROJECT_SOURCE_DIR}/src/msg/proc.json
-  DEPENDS ${PROJECT_SOURCE_DIR}/src/msg/proc.json
-)
-
-add_custom_command(
-  OUTPUT ${PROJECT_BINARY_DIR}/gen_msg/io.cpp ${PROJECT_BINARY_DIR}/gen_msg/io.h
-  COMMAND ${PROJECT_SOURCE_DIR}/gen_msg_meta.py -d ${PROJECT_BINARY_DIR}/gen_msg -n io  ${PROJECT_SOURCE_DIR}/src/msg/io.json
-  DEPENDS ${PROJECT_SOURCE_DIR}/src/msg/io.json
+  OUTPUT ${MSG_SRC} ${MSG_H}
+  COMMAND ${PROJECT_SOURCE_DIR}/msg/gen.py -d ${PROJECT_BINARY_DIR}/gen_msg ${MSG_DEFS}
+  DEPENDS ${MSG_DEFS}
 )
 
 target_compile_features(qine PUBLIC cxx_std_17)

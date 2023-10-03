@@ -9,14 +9,14 @@
 struct QnxMessageField;
 
 struct QnxMessageType {
-    enum class Match {TYPE, SUBTYPE, NONE};
+    enum class Kind { MSG_TYPE, MSG_SUBTYPE, REPLY, STRUCT};
 
-    Match m_match;
+    Kind m_match;
     uint16_t m_type;
     uint16_t m_subtype;
 
     const char* m_name;
-    QnxMessageType *m_reply;
+    const QnxMessageType *m_reply;
 
     size_t m_field_count;
     const QnxMessageField *m_fields;
@@ -26,10 +26,10 @@ struct QnxMessageType {
 
 struct QnxMessageField {
     enum class Format {
-        U8, U16, U32, PID
+        SUB, U8, U16, U32, PID
     };
     enum class Presentation {
-        DEFAULT, DEC, HEX
+        DEFAULT, HEX
     };
 
     const char *m_name;
@@ -37,12 +37,10 @@ struct QnxMessageField {
     size_t m_size;
     Format m_format;
     Presentation m_presentation;
+    QnxMessageType *m_typeref;
 };
 
 struct QnxMessageList {
     size_t count_messages;
     const QnxMessageType* messages;
 };
-
-#include <gen_msg/proc.h>
-#include <gen_msg/io.h>
