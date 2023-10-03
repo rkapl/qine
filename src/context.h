@@ -36,6 +36,7 @@ public:
     uint32_t pop_stack();
 
     void dump(FILE *stream);
+    std::string read_string(FarPointer ptr, size_t size = 256);
 
     inline greg_t& reg(int reg);
     inline greg_t reg(int reg) const;

@@ -40,6 +40,9 @@ public:
     size_t paged_size() const {
         return m_paged_size;
     }
+
+    void make_shared();
+    bool is_shared() const;
 private:
     static int map_prot(Access access);
     void update_descriptors();
@@ -48,6 +51,7 @@ private:
     size_t m_paged_size;
     size_t m_limit_size;
     size_t m_reserved;
+    bool m_shared;
     // Store bitmap of valid readable areas
     std::vector<bool> m_bitmap;
 };

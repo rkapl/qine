@@ -1,70 +1,157 @@
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <sys/uio.h>
+
 #include "msg.h"
 #include "emu.h"
 #include "process.h"
 #include "qnx/types.h"
 #include "types.h"
-#include <algorithm>
-#include <cstring>
 
 Msg::Msg(Process* proc, size_t send_parts, FarPointer send, size_t rcv_parts, FarPointer rcv):
     m_proc(proc), 
     m_rcv_parts(rcv_parts),
-    m_send_parts(send_parts),
-    m_size(0)
+    m_send_parts(send_parts)
 {
-
-        m_send = reinterpret_cast<Qnx::mxfer_entry*>(
+    m_send = reinterpret_cast<Qnx::mxfer_entry*>(
         proc->translate_segmented(send, sizeof(Qnx::mxfer_entry) * send_parts, RwOp::READ)
     );
-    
+
     m_rcv = reinterpret_cast<Qnx::mxfer_entry*>(
         proc->translate_segmented(rcv, sizeof(Qnx::mxfer_entry) * rcv_parts, RwOp::WRITE)
     );
-    
-    for (size_t i = 0; i < m_send_parts; i++) {
-        m_size += m_send[i].mxfer_len;
-    }
 }
 
 Msg::~Msg() {
 
 }
 
+auto Msg::iterate_send() -> Iterator{
+    return Iterator(m_send, m_send_parts);
+}
+auto Msg::iterate_receive() -> Iterator {
+    return Iterator(m_rcv, m_rcv_parts);
+}
+
+Msg::Iterator::Iterator(Qnx::mxfer_entry *chunks, size_t chunk_count):
+    m_chunks(chunks), m_chunk_count(chunk_count),
+    m_i(0), m_offset_of_chunk(0), m_offset(0)
+{   
+}
+
+FarSlice Msg::Iterator::next(size_t size)
+{
+    normalize();
+    Qnx::mxfer_entry *c = &m_chunks[m_i];
+    size_t to_read = c->mxfer_len - m_offset;
+    if (to_read > size) {
+        to_read = size;
+    }
+
+    m_offset += to_read;
+
+    FarSlice slice(FarPointer(c->mxfer_seg, c->mxfer_off), to_read);
+    return slice;
+}
+
+void Msg::Iterator::normalize() {
+    Qnx::mxfer_entry *c = &m_chunks[m_i];
+    while (m_i < m_chunk_count && m_offset >= c->mxfer_len) {
+        m_offset_of_chunk += m_offset;
+        m_offset = 0;
+        m_i++;
+        c++;
+    }
+}
+
+bool Msg::Iterator::eof() {
+    normalize();
+    return m_i == m_chunk_count;
+}
+
+size_t Msg::Iterator::msg_offset() const {
+    return m_offset_of_chunk + m_offset;
+}
+
+void Msg::Iterator::skip_to(size_t dst_offset) {
+    FarSlice s;
+    do {
+        size_t remaining = dst_offset - msg_offset();
+        s = next(remaining);
+    } while(!s.is_empty());
+}
+
 void Msg::read(void *dstv, size_t msg_offset, size_t size) {
     // QNX does not actually transfer message lengths, they must be implied or part of the message
     // We copy this in the API and send back garbage for overreads
-
-    Qnx::mxfer_entry *chunk = m_send;
+    auto i = iterate_send();
     uint8_t *dst = static_cast<uint8_t*>(dstv);
-    size_t chunk_offset = 0;
-    size_t chunk_id = 0;
+    i.skip_to(msg_offset);
 
-    auto advance_chunk = [&chunk_id, &chunk_offset, &chunk] {
-        chunk_offset += chunk->mxfer_len;
-        chunk_id++;
-        chunk++;
-    };
-
-    // skip xfers until we hit intersecting xfer
-    while (msg_offset >= chunk_offset + chunk->mxfer_len) {
-        advance_chunk();
-    }
-
-    while ((size != 0) && (chunk_id < m_send_parts)){
-        // where to start reading in this chunk
-        size_t chunk_read_offset = 0;
-        if (msg_offset > chunk_offset )
-            chunk_read_offset = msg_offset - chunk_offset;
-        
-        // transfer size
-        size_t chunk_read_length = std::min(chunk->mxfer_len - chunk_read_offset, size);
-        auto chunk_data = static_cast<char*>(m_proc->translate_segmented(FarPointer(chunk->mxfer_seg, chunk->mxfer_off), chunk->mxfer_len));
-        memcpy(dst + chunk_read_offset, chunk_data + chunk_read_offset, chunk_read_length);
-
-        advance_chunk();
-        dst += chunk_read_length;
-        size -= chunk_read_length;
+    while (size) {
+        auto slice = i.next(size);
+        if (slice.is_empty())
+            break;
+        auto src = m_proc->translate_segmented(slice.m_ptr, slice.m_size, RwOp::READ);
+        memcpy(dst, src, slice.m_size);
+        dst += slice.m_size;
+        size -= slice.m_size;
     }
 
     memset(dst, 0xCC, size);
+}
+
+size_t Msg::write(size_t msg_offset, const void *srcv, size_t size)
+{
+    size_t orig_size = size;
+    auto i = iterate_receive();
+    const uint8_t *src = static_cast<const uint8_t*>(srcv);
+    i.skip_to(msg_offset);
+
+    while (size) {
+        auto slice = i.next(size);
+        if (slice.is_empty())
+            break;
+        auto dst = m_proc->translate_segmented(slice.m_ptr, slice.m_size, RwOp::WRITE);
+        mempcpy(dst, src, slice.m_size);
+        src += slice.m_size;
+        size -= slice.m_size;
+    }
+
+    return orig_size - size;
+}
+
+void Msg::write_status(uint16_t status) {
+    write_type(0, &status);
+}
+
+static const uint8_t garbage_read[256] = {'X'};
+static const uint8_t garbage_write[256] = {0};
+
+void Msg::read_iovec(size_t offset, size_t size, std::vector<iovec>& dst) {
+    auto i = iterate_send();
+    i.skip_to(offset);
+
+    while (size != 0) {
+        auto slice = i.next(size);
+        if (slice.is_empty())
+            break;
+        auto ptr = m_proc->translate_segmented(slice.m_ptr, slice.m_size, RwOp::READ);
+        struct iovec vec;
+        vec.iov_base = ptr;
+        vec.iov_len = slice.m_size;
+        dst.push_back(vec);
+
+        size -= slice.m_size;
+    }
+
+    while (size != 0) {
+        struct iovec vec;
+        vec.iov_base = const_cast<void*>(static_cast<const void*>(garbage_read));
+        vec.iov_len = std::min(size, sizeof(garbage_read));
+        dst.push_back(vec);
+        size -= vec.iov_len;
+    }
 }

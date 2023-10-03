@@ -1,15 +1,21 @@
 #include <array>
+#include <cerrno>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 #include <sys/types.h>
 #include <sys/ucontext.h>
+#include <sys/uio.h>
 #include <unistd.h>
+#include <vector>
 
 #include "emu.h"
+#include "gen_msg/io.h"
 #include "mem_ops.h"
+#include "msg/meta.h"
 #include "process.h"
 #include "qnx/errno.h"
 #include "qnx/magic.h"
@@ -18,6 +24,7 @@
 #include "msg/dump.h"
 #include "gen_msg/proc.h"
 #include "segment.h"
+#include "segment_descriptor.h"
 #include "types.h"
 #include "context.h"
 #include "msg.h"
@@ -54,7 +61,7 @@ void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
     if (ctx.reg(REG_ES) == Qnx::MAGIC_PTR_SELECTOR) {
         // hack: migrate to LDT
         ctx.reg(REG_ES) = Qnx::MAGIC_PTR_SELECTOR | 4;
-        printf("Migrating to LDT @ %x\n", ctx.reg(REG_EIP));
+        // printf("Migrating to LDT @ %x\n", ctx.reg(REG_EIP));
         handled = true;
     }
 
@@ -77,6 +84,9 @@ void Emu::dispatch_syscall(Context& ctx)
         case 0:
             syscall_sendmx(ctx);
             break;
+        case 11:
+            syscall_sendfdmx(ctx);
+            break;
         default:
             printf("Unknown syscall %d\n", syscall);
             ctx.proc()->set_errno(Qnx::QENOSYS);
@@ -84,10 +94,10 @@ void Emu::dispatch_syscall(Context& ctx)
     }
 }
 
-void Emu::syscall_sendmx(Context &ctx)
+void Emu::syscall_sendfdmx(Context &ctx)
 {
-    uint32_t ds= ctx.reg(REG_DS);
-    Qnx::pid_t pid = ctx.reg(REG_EDX);
+    uint32_t ds = ctx.reg(REG_DS);
+    int fd = ctx.reg(REG_EDX);
     uint8_t send_parts = ctx.reg_ah();
     uint8_t recv_parts = ctx.reg_ch();
     GuestPtr send_data = ctx.reg(REG_EBX);
@@ -95,24 +105,145 @@ void Emu::syscall_sendmx(Context &ctx)
 
     Msg msg(Process::current(), send_parts, FarPointer(ds, send_data),  recv_parts, FarPointer(ds, recv_data));
 
+    dispatch_msg(1, ctx, msg);
+}
+
+void Emu::syscall_sendmx(Context &ctx)
+{
+    uint32_t ds = ctx.reg(REG_DS);
+    Qnx::pid_t pid = ctx.reg(REG_EDX);
+    uint8_t send_parts = ctx.reg_ah();
+    uint8_t recv_parts = ctx.reg_ch();
+    GuestPtr send_data = ctx.reg(REG_EBX);
+    GuestPtr recv_data = ctx.reg(REG_ESI);
+
+    Msg msg(Process::current(), send_parts, FarPointer(ds, send_data),  recv_parts, FarPointer(ds, recv_data));
+    // TODO: handle faults
+    dispatch_msg(pid, ctx, msg);
+}
+
+void Emu::dispatch_msg(int pid, Context& ctx, Msg& msg)
+{
+    ctx.reg(REG_EAX) = 0;
     switch (pid) {
     case 1:
-        msg_proc(msg);
+        msg_handle(msg);
         break;
     default:
         printf("Unknown message destination %d\n", pid);
         ctx.proc()->set_errno(Qnx::QESRCH);
         ctx.reg(REG_EAX) = -1;
     }
-
 }
 
-void Emu::msg_proc(Msg& msg) {
+void Emu::msg_handle(Msg& msg) {
     Qnx::MsgHeader hdr;
     msg.read_type(&hdr);
 
-    printf("Msg to proc dec %d : %d\n", hdr.type, hdr.subtype);
-    QnxMsg::dump_message(stdout, QnxMsg::proc::list, msg);
+#if 0
+    uint8_t msg_class = hdr.type >> 8;
+    switch (msg_class) {
+        case 0: 
+            QnxMsg::dump_message(stdout, QnxMsg::proc::list, msg);
+            break;
+        case 1: 
+            QnxMsg::dump_message(stdout, QnxMsg::io::list, msg);
+            break;
+    }
+#endif
+
+    switch (hdr.type) {
+        case QnxMsg::proc::segment_realloc::type:
+            switch (hdr.subtype) {
+                case QnxMsg::proc::segment_realloc::subtype:
+                    proc_segment_realloc(msg);
+                    break;
+            }
+            break;
+        case QnxMsg::proc::terminate::type:
+            proc_terminate(msg);
+            break;
+
+        case QnxMsg::io::write::type:
+            io_write(msg);
+            break;
+        case QnxMsg::io::lseek::type:
+            io_lseek(msg);
+            break;
+        default:
+            printf("Unhandled message %x:%x\n", hdr.type, hdr.subtype);
+            break;
+    }
+}
+
+void Emu::proc_terminate(Msg &ctx)
+{
+    QnxMsg::proc::terminate msg;
+    ctx.read_type(&msg);
+    debug_hook();
+    exit(msg.m_status);
+}
+
+void Emu::proc_segment_realloc(Msg &ctx)
+{
+    QnxMsg::proc::segment_realloc msg;
+    ctx.read_type(&msg);
+    // TODO: handle invalid segments
+    auto sd  = Process::current()->descriptor_by_selector(msg.m_sel);
+    auto seg = sd->segment();
+    GuestPtr base = seg->paged_size();
+
+    QnxMsg::proc::segment_realloc_reply reply;
+    memset(&reply, 0, sizeof(reply));
+    if (seg->is_shared()) {
+        reply.m_status = Qnx::QEBUSY;
+    } else {
+        if (seg->size() < msg.m_nbytes) {
+            seg->grow(Access::READ_WRITE, MemOps::align_page_up(msg.m_nbytes - seg->size()));
+            // TODO: this must be done better, the segment must be aware of its descriptors,
+            // at least code and data 
+            sd->update_descriptors();
+        }
+        reply.m_status = Qnx::QEOK;
+        reply.m_sel = msg.m_sel;
+        reply.m_nbytes = seg->size();
+        reply.m_addr = reinterpret_cast<uint32_t>(seg->location()); 
+        //printf("New segment size: %x\n", seg->size());
+    }
+    ctx.write_type(0, &reply);
+}
+
+void Emu::io_lseek(Msg &ctx) {
+    QnxMsg::io::lseek msg;
+    ctx.read_type(&msg);
+
+    // STUB
+
+    QnxMsg::io::lseek_reply reply;
+    reply.m_status = Qnx::QEOK;
+    reply.m_zero = 0;
+    reply.m_offset = 0;
+    ctx.write_type(0, &reply);
+}
+
+void Emu::io_write(Msg &ctx) {
+    QnxMsg::io::write msg;
+    ctx.read_type(&msg);
+
+    std::vector<struct iovec> iov;
+    ctx.read_iovec(sizeof(msg), msg.m_nbytes, iov);
+
+    QnxMsg::io::write_reply reply;
+    int r = writev(msg.m_fd, iov.data(), iov.size());
+    reply.m_zero = 0;
+    if (r < 0) {
+        reply.m_status = errno;
+        reply.m_nbytes = 0;
+    } else {
+        reply.m_status = Qnx::QEOK;
+        reply.m_nbytes = r;
+    }
+    ctx.write_type(0, &reply);
 }
 
 void Emu::debug_hook() {

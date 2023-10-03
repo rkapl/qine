@@ -20,6 +20,7 @@ add_executable(qine
   src/msg/meta.h src/msg/meta.cpp
   src/msg/dump.h src/msg/dump.cpp
   ${PROJECT_BINARY_DIR}/gen_msg/proc.h ${PROJECT_BINARY_DIR}/gen_msg/proc.cpp
+  ${PROJECT_BINARY_DIR}/gen_msg/io.h ${PROJECT_BINARY_DIR}/gen_msg/io.cpp
 )
 
 target_include_directories(qine PRIVATE ${PROJECT_BINARY_DIR} ${PROJECT_SOURCE_DIR}/src)
@@ -27,6 +28,13 @@ target_include_directories(qine PRIVATE ${PROJECT_BINARY_DIR} ${PROJECT_SOURCE_D
 add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/gen_msg/proc.cpp ${PROJECT_BINARY_DIR}/gen_msg/proc.h
   COMMAND ${PROJECT_SOURCE_DIR}/gen_msg_meta.py -d ${PROJECT_BINARY_DIR}/gen_msg -n proc  ${PROJECT_SOURCE_DIR}/src/msg/proc.json
+  DEPENDS ${PROJECT_SOURCE_DIR}/src/msg/proc.json
+)
+
+add_custom_command(
+  OUTPUT ${PROJECT_BINARY_DIR}/gen_msg/io.cpp ${PROJECT_BINARY_DIR}/gen_msg/io.h
+  COMMAND ${PROJECT_SOURCE_DIR}/gen_msg_meta.py -d ${PROJECT_BINARY_DIR}/gen_msg -n io  ${PROJECT_SOURCE_DIR}/src/msg/io.json
+  DEPENDS ${PROJECT_SOURCE_DIR}/src/msg/io.json
 )
 
 target_compile_features(qine PUBLIC cxx_std_17)

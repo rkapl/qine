@@ -98,6 +98,7 @@ void Process::setup_magic(SegmentDescriptor *data_sd, SegmentAllocator& alloc)
     m_magic_pointer->reserve(MemOps::PAGE_SIZE);
     m_magic_pointer->grow(Access::READ_WRITE, MemOps::PAGE_SIZE);
     m_magic_pointer->set_limit(8);
+    m_magic_pointer->make_shared();
     // It is swapped for som reason
     *reinterpret_cast<FarPointer*>(m_magic_pointer->pointer(0, sizeof(FarPointer))) = m_magic_guest_pointer;
     /* And publish it under well known ID. Unfortunately, we cannot publish GDT selectors (understandably), 
@@ -110,6 +111,7 @@ void Process::setup_magic(SegmentDescriptor *data_sd, SegmentAllocator& alloc)
 void Process::setup_startup_context()
 {
     Context ctx(&startup_context);
+
 
     if (!m_load.entry_main.has_value() || ! m_load.entry_slib.has_value() || !m_load.data_segment.has_value()) {
         throw GuestStateException("Loading incomplete");
@@ -126,23 +128,11 @@ void Process::setup_startup_context()
 
     setup_magic(data_sd, alloc);
 
-    #if 0
-    /* Create process environment */
-    alloc.alloc(sizeof(Qnx::ProcessEnvironment));
-    auto procenv = reinterpret_cast<Qnx::ProcessEnvironment*>(alloc.ptr());
-    memset(procenv, 0, sizeof(*procenv));
-    strcpy(procenv->cwd, "/home/qine");
-    strcpy(procenv->root_prefix, "//1");
-    ctx.reg(REG_EBX) = alloc.offset();
-    m_procenv_guest_pointer = FarPointer(data_sd->selector(), alloc.offset());
-    m_procenv = procenv;
-    #endif
-
     /* Now create the stack environment, that is argc, argv, arge  */
     ctx.push_stack(0); // Unknown
-    ctx.push_stack(1); // Unknown
-    ctx.push_stack(parent_pid()); // Unknown
-    ctx.push_stack(pid()); // Unknown
+    ctx.push_stack(1); // nid?
+    ctx.push_stack(parent_pid());
+    ctx.push_stack(pid());
 
     /* Environment */
     ctx.push_stack(0);
@@ -151,13 +141,17 @@ void Process::setup_startup_context()
 
     /* Argv */
     ctx.push_stack(0);
-    alloc.push_string("test");
+    alloc.push_string("10");
     ctx.push_stack(alloc.offset());
-    alloc.push_string("/bin/echo");
+    alloc.push_string("+");
+    ctx.push_stack(alloc.offset());
+    alloc.push_string("10");
+    ctx.push_stack(alloc.offset());
+    alloc.push_string("/bin/expr");
     ctx.push_stack(alloc.offset());
 
     /* Argc */
-    ctx.push_stack(2);
+    ctx.push_stack(4);
 
     /* Entry points*/
     auto main_entry = m_load.entry_main.value();
@@ -168,15 +162,18 @@ void Process::setup_startup_context()
     ctx.reg(REG_CS) = slib_entry.m_segment;
     ctx.reg(REG_EIP) = slib_entry.m_offset;
 
+    printf("Real start: %x:%x\n", slib_entry.m_segment, slib_entry.m_offset);
+    printf("Program start: %x:%x\n", main_entry.m_segment, main_entry.m_offset);
+
     data_sd->update_descriptors();
 
     /* What we have allocated */
     ctx.reg(REG_EBX) = data_seg->size();
-    /* No, there is nothing free :) */
+    /* No, there is nothing free, allocate your own :) */
     ctx.reg(REG_ECX) = 0;
 
     // ctx.dump(stdout);
 
     // breakpoints
-    ctx.write<uint8_t>(Context::CS, 0x619 , 0xCC);
+    //ctx.write<uint8_t>(Context::CS, 0x61e , 0xCC);
 }

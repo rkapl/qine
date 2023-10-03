@@ -9,12 +9,14 @@
 struct QnxMessageField;
 
 struct QnxMessageType {
-    static constexpr uint16_t NO_SUBTYPE = 0xFFFF;
+    enum class Match {TYPE, SUBTYPE, NONE};
 
+    Match m_match;
     uint16_t m_type;
     uint16_t m_subtype;
 
     const char* m_name;
+    QnxMessageType *m_reply;
 
     size_t m_field_count;
     const QnxMessageField *m_fields;
@@ -43,3 +45,4 @@ struct QnxMessageList {
 };
 
 #include <gen_msg/proc.h>
+#include <gen_msg/io.h>

@@ -10,7 +10,7 @@ SegmentDescriptor::SegmentDescriptor(SegmentId id, Access access, const std::sha
     :m_id(id), m_access(access), m_seg(seg) 
 {
     update_descriptors();
-    printf("LDT %d: %p\n", id, m_seg->location());
+    printf("LDT %d: %p (access %d)\n", id, m_seg->location(), m_access);
 }
 
 void SegmentDescriptor::update_descriptors() {

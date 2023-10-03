@@ -102,6 +102,7 @@ void FlatLoader::finalize_segments() {
     if (m_stack + m_skip > m_image_base) {
         panic("stack does not fit");
     }
+
     // actual skip can be larger than one page
     m_skip = m_image_base - m_stack;
 

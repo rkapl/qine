@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <memory.h>
+#include <string>
 #include <sys/ucontext.h>
 #include <unistd.h>
 
@@ -86,4 +87,29 @@ void Context::dump(FILE *s) {
         auto addr = reg(REG_ESP) + i * 4;
         fprintf(s, "%08X: %08X\n", addr, read<uint32_t>(SS, addr));
     }
+
+    #if 0
+    fprintf(s, "-- env --\n");
+    auto m_ptr = m_proc->m_magic_guest_pointer;
+    auto user_ptr = [m_ptr] (void* ptr) {
+        return FarPointer(m_ptr.m_segment, reinterpret_cast<uint32_t>(ptr));
+    };
+    auto m = m_proc->m_magic;
+    auto cwd = read_string(user_ptr(m->cwd));
+    auto root = read_string(user_ptr(m->root_prefix));
+    auto cmd = read_string(user_ptr(m->cmd));
+    
+    fprintf(s, "cmd=%s, cwd=%s, root=%s\n", cmd.c_str(), cwd.c_str(), root.c_str());
+    #endif
+}
+
+std::string Context::read_string(FarPointer ptr, size_t size) {
+    std::string acc;
+    auto mem = static_cast<const char*>(m_proc->translate_segmented(ptr, size, RwOp::READ));
+    for (size_t i = 0; i < size; i++) {
+        if (mem[i] == 0)
+            break;
+        acc.push_back(mem[i]);
+    }
+    return acc;
 }

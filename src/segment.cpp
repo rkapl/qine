@@ -11,7 +11,7 @@
 
 Segment::Segment(): 
     m_location(nullptr), 
-    m_paged_size(0), m_reserved(0)
+    m_paged_size(0), m_reserved(0), m_shared(false)
 {
 }
 
@@ -143,6 +143,14 @@ void* Segment::pointer(size_t offset, size_t size)
     return reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(m_location) + offset);
 }
 
+void Segment::make_shared() {
+    m_shared = true;
+}
+
+bool Segment::is_shared() const {
+    return m_shared;
+}
+
 Segment::~Segment() {
     if (m_reserved) {
         munmap(m_location, m_reserved);
@@ -183,3 +191,4 @@ uint32_t SegmentAllocator::offset() const {
 void * SegmentAllocator::ptr() const {
     return m_segment->pointer(offset(), 0);
 }
+

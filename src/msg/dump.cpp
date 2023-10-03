@@ -42,22 +42,29 @@ void QnxMsg::dump_message(FILE* s, const QnxMessageList& list,  Msg& msg) {
     
     auto match_msg = [&hdr] (const QnxMessageType& t) -> bool {
         bool type_match = t.m_type == hdr.type;
-        bool subtype_match = (t.m_subtype == QnxMessageType::NO_SUBTYPE) ? true : (t.m_subtype == hdr.subtype);
-        return type_match && subtype_match;
+        bool subtype_match = (t.m_subtype == hdr.subtype);
+        switch(t.m_match) {
+            case QnxMessageType::Match::TYPE:
+                return type_match;
+            case QnxMessageType::Match::SUBTYPE:
+                return type_match && subtype_match;
+            default:
+                return false;
+        }
     };
 
     auto t_end = &list.messages[list.count_messages];
     auto t = std::find_if(list.messages, t_end, match_msg);
 
     if (t == t_end) {
-        fprintf(s, "Unknown message (%d: %d)\n", hdr.type, hdr.subtype);
+        fprintf(s, "Unknown message (%x: %x)\n", hdr.type, hdr.subtype);
         return;
     }
 
-    std::unique_ptr<uint8_t[]> msg_buf(new uint8_t[msg.size()]);
-    msg.read(msg_buf.get(), 0, msg.size());
+    std::unique_ptr<uint8_t[]> msg_buf(new uint8_t[t->size()]);
+    msg.read(msg_buf.get(), 0, t->size());
 
-    fprintf(s, "message %s (size: %x){\n", t->m_name, msg.size());
+    fprintf(s, "message %s {\n", t->m_name);
     for(size_t fi = 0; fi < t->m_field_count; ++fi) {
         auto& f = t->m_fields[fi];
         fprintf(s, "@%02x ",  f.m_offset);

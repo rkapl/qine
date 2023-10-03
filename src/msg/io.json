@@ -1,0 +1,37 @@
+[
+    {
+        "name": "write",
+        "type": "104",
+        "fields": [
+            ["fd", "U16"],
+            ["nbytes", "U16"],
+            ["zero", "U16"]
+        ]
+    },
+    {
+        "name": "write_reply",
+        "fields": [
+            ["status", "U16"],
+            ["nbytes", "U16"],
+            ["zero", "U32"]
+        ]
+    },
+    {
+        "name": "lseek",
+        "type": "105",
+        "fields": [
+            ["fd", "U16"],
+            ["offset", "U32"],
+            ["whence", "U16"],
+            ["zero", "U16"]
+        ]
+    },
+    {
+        "name": "lseek_reply",
+        "fields": [
+            ["status", "U16"],
+            ["zero", "U16"],
+            ["offset", "U32"]
+        ]
+    }
+]

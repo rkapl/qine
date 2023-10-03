@@ -20,8 +20,16 @@ public:
     ~Emu();
 private:
     void dispatch_syscall(Context& ctx);
-    void syscall_sendmx(Context &ctx);
-    void msg_proc(Msg &ctx);
+    void syscall_sendmx(Context& ctx);
+    void syscall_sendfdmx(Context& ctx);
+    void dispatch_msg(int pid, Context& ctx, Msg& msg);
+    void msg_handle(Msg &ctx);
+
+    void proc_segment_realloc(Msg &ctx);
+    void proc_terminate(Msg &ctx);
+
+    void io_lseek(Msg &ctx);
+    void io_write(Msg &ctx);
 
     void handler_segv(int sig, siginfo_t *info, void *uctx);
     static void static_handler_segv(int sig, siginfo_t *info, void *uctx);

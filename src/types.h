@@ -32,3 +32,14 @@ struct FarPointer {
 
     static constexpr FarPointer null(){ return FarPointer(0, 0); }
 };
+
+
+struct FarSlice {
+    FarSlice() = default;
+    constexpr FarSlice(FarPointer ptr, uint32_t size): m_ptr(ptr), m_size(size) {}
+
+    FarPointer m_ptr;
+    uint32_t m_size;
+
+    bool is_empty() const {return m_size == 0;}
+};

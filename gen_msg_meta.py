@@ -19,8 +19,10 @@ class DuplicateMessage(Exception):
 @dataclass
 class Message:
     name: str
-    type: int
-    subtype: int = None
+    match_type: str
+    type: int = 0
+    subtype: int = 0
+    reply: str = None
     fields: list['Field'] = None
 
 @dataclass
@@ -44,21 +46,27 @@ class MetaInfo:
 
     def read(self, f):
         data = json.load(f)
-        for msg in data:
-            name = msg['name']
+        for msgd in data:
+            name = msgd['name']
             if name in self.messages:
                 raise DuplicateMessage(name)
-            type_parts = msg['type'].split(':')
-            type = int(type_parts[0])
+            
             msg = Message(
                 name=name,
-                type=type,
-                fields=self.parse_fields(msg)
+                match_type='NONE',
+                reply=msgd.get('reply', None),
+                fields=self.parse_fields(msgd),
             )
-            if len(type_parts) >= 2:
-                msg.subtype=int(type_parts[1])
+            if 'type' in msgd:
+                type_parts = msgd['type'].split(':')
+                msg.type = int(type_parts[0], 16)
+                msg.match_type = 'TYPE'
+                if len(type_parts) >= 2:
+                    msg.match_type = 'SUBTYPE'
+                    msg.subtype=int(type_parts[1], 16)
             
             self.messages[msg.name] = msg
+
     def parse_fields(self, msg):
         acc = []
         for fdesc in msg['fields']:
@@ -78,11 +86,15 @@ class MetaInfo:
 
         for m in self.messages.values():
             o.write(f'struct {m.name} {{\n')
-            o.write(f'   uint16_t type;\n');
-            if (m.subtype is not None):
-                o.write(f'   uint16_t subtype;\n');
+            if m.match_type in ['TYPE', 'SUBTYPE']:
+                o.write(f'   static constexpr uint16_t type = {m.type};\n')
+                o.write(f'   uint16_t m_type;\n');
+                if m.match_type == 'SUBTYPE':
+                    o.write(f'   uint16_t m_subtype;\n');
+                    o.write(f'   static constexpr uint16_t subtype = {m.subtype};\n')
+
             for f in m.fields:
-                o.write(f'   {f.c_type} {f.name};\n')
+                o.write(f'   {f.c_type} m_{f.name};\n')
             o.write('} qine_attribute_packed;\n')
     
         o.write('extern const QnxMessageList list;\n')
@@ -109,13 +121,16 @@ class MetaInfo:
         for m in self.messages.values():
             for f in m.fields:
                 c_def('static', f'QnxMessageField msgf_{m.name}_{f.name}',
-                      [c(f.name), f'offsetof({m.name}, {f.name})', f'sizeof({f.c_type})', f'F::{f.format}', f'P::{f.presentation}'])
+                      [c(f.name), f'offsetof({m.name}, m_{f.name})', f'sizeof({f.c_type})', f'F::{f.format}', f'P::{f.presentation}'])
 
             c_def('static', f'QnxMessageField msgf_{m.name}[]', [f'msgf_{m.name}_{f.name}' for f in m.fields])
 
-            subtype = str(m.subtype) if m.subtype else '0xFFFF'
+            resolved_reply = 'NULL'
+            if m.reply is not None:
+                resolved_reply = f'msg_{m.reply}'
+            match = f'QnxMessageType::Match::{m.match_type}'
             c_def('static', f'QnxMessageType msg_{m.name}', [
-                str(m.type), subtype, c(m.name), len(m.fields), f'msgf_{m.name}'
+                match, str(m.type), str(m.subtype), c(m.name), resolved_reply, len(m.fields), f'msgf_{m.name}'
             ])
 
         c_def('static', 'QnxMessageType all_msg[]', [

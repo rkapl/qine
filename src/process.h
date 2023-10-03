@@ -9,6 +9,7 @@
 #include <memory>
 #include <ucontext.h>
 
+#include "context.h"
 #include "cpp.h"
 #include "emu.h"
 #include "qnx/magic.h"
@@ -31,6 +32,7 @@ struct LoadInfo {
 /* Represents the currently running process, a singleton */
 class Process{
     friend class Emu;
+    friend class Context;
 public:
     static inline Process* current();
     static void initialize();
@@ -70,10 +72,7 @@ private:
 
     std::shared_ptr<Segment> m_magic_pointer;
     FarPointer m_magic_guest_pointer;
-    Qnx::Magic *m_magic;
-
-    FarPointer m_procenv_guest_pointer;
-    Qnx::ProcessEnvironment* m_procenv;
+    Qnx::Magic* m_magic;
 
     Emu m_emu;
 };
