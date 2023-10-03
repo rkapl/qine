@@ -3,6 +3,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include "mem_ops.h"
 #include "segment_descriptor.h"
 #include "segment.h"
 
@@ -18,8 +19,13 @@ void SegmentDescriptor::update_descriptors() {
     ud.entry_number = m_id;
     ud.base_addr = reinterpret_cast<uintptr_t>(m_seg->location());
     // TODO: fix big segments
-    ud.limit = m_seg->size();
-    ud.limit_in_pages = 0;
+    if (m_seg->size() > 64*1024) {
+        ud.limit = m_seg->size() / MemOps::PAGE_SIZE;
+        ud.limit_in_pages = 1;
+    } else {
+        ud.limit = m_seg->size();
+        ud.limit_in_pages = 0;
+    }
     ud.seg_32bit = 1;
     ud.useable = 1;
     ud.read_exec_only = 0;
