@@ -6,10 +6,11 @@
 #include <stdexcept>
 #include <sys/ucontext.h>
 
+#include "context.h"
+
 class Segment;
 class Process;
 class Msg;
-class Context;
 
 /* Handles the low-level emulation */
 class Emu {
@@ -35,6 +36,8 @@ private:
     static void static_handler_segv(int sig, siginfo_t *info, void *uctx);
     static void static_handler_user(int sig, siginfo_t *info, void *uctx);
     static void debug_hook();
+
+    TlsFixup m_tls_fixup;
 
     std::shared_ptr<Segment> m_stack;
 };

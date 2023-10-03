@@ -67,7 +67,7 @@ void QnxMsg::dump_message(FILE* s, const QnxMessageList& list,  Msg& msg) {
     fprintf(s, "message %s {\n", t->m_name);
     for(size_t fi = 0; fi < t->m_field_count; ++fi) {
         auto& f = t->m_fields[fi];
-        fprintf(s, "@%02x ",  f.m_offset);
+        fprintf(s, "@%02x ", static_cast<uint32_t>(f.m_offset));
         fprintf(s, "   %s: ", f.m_name);
 
         auto field_data = static_cast<void*>(msg_buf.get() + f.m_offset);

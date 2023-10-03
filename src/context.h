@@ -1,6 +1,5 @@
 #pragma once
 
-#include "emu.h"
 #include "types.h"
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +14,16 @@ public:
     GuestStateException(const char *what): std::runtime_error(what) {}
 };
 
+/* x64 does not restore FS and GS to known values on signal entry, we need to reload them */
+class TlsFixup {
+public:
+    void save();
+    void restore();
+private:
+    uint64_t fsbase;
+    uint64_t gsbase;
+};
+
 /* DS, ES, FS and GS are not stored on 64 bit linux, store them here. */
 class ExtraContext {
 public:
@@ -23,8 +32,6 @@ public:
 
     uint16_t ds;
     uint16_t es;
-    uint16_t fs;
-    uint16_t gs;
 };
 
 /* Wrapper around ucontext_t with helpers */
@@ -78,8 +85,8 @@ public:
     inline uint16_t& reg_cs() { return greg_shift<uint16_t>(REG_CSGSFS, 0);};
     inline uint16_t& reg_ds() { return m_ectx->ds;};
     inline uint16_t& reg_es() { return m_ectx->es;};
-    inline uint16_t& reg_gs() { return m_ectx->gs;};
-    inline uint16_t& reg_fs() { return m_ectx->fs;};
+    inline uint16_t& reg_gs() { return greg_shift<uint16_t>(REG_CSGSFS, 16);};
+    inline uint16_t& reg_fs() { return greg_shift<uint16_t>(REG_CSGSFS, 32);};
     inline uint16_t& reg_ss() { return greg_shift<uint16_t>(REG_CSGSFS, 48);};
 
     inline size_t reg_trapno() { return greg(REG_TRAPNO); };

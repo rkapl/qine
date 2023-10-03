@@ -1,9 +1,12 @@
+#include <stdexcept>
 #include <stdint.h>
 #include <stdio.h>
 #include <memory.h>
 #include <string>
 #include <sys/ucontext.h>
 #include <unistd.h>
+#include <asm/prctl.h>
+#include <sys/syscall.h>
 
 #include "context.h"
 #include "process.h"
@@ -117,13 +120,34 @@ std::string Context::read_string(FarPointer ptr, size_t size) {
 void ExtraContext::from_cpu() {
     __asm__ ("mov %%ds, %0": "=r" (ds));
     __asm__ ("mov %%es, %0": "=r" (es));
-    __asm__ ("mov %%fs, %0": "=r" (fs));
-    __asm__ ("mov %%gs, %0": "=r" (gs));
 }
 
 void ExtraContext::to_cpu() {
     __asm__ ("mov %0, %%ds":: "r" (ds));
     __asm__ ("mov %0, %%es":: "r" (es));
-    //__asm__ ("mov %0, %%fs":: "r" (fs));
-    __asm__ ("mov %0, %%gs":: "r" (gs));
+}
+
+
+void TlsFixup::save() {
+    #ifdef __amd64__
+    int r;
+    /* There are optionally some instructions for that*/
+    r = syscall(SYS_arch_prctl, ARCH_GET_FS, &fsbase);
+    if (r < 0)
+        throw std::logic_error("arch_prctl failed");
+    r = syscall(SYS_arch_prctl, ARCH_SET_GS, &gsbase);
+    if (r < 0)
+        throw std::logic_error("arch_prctl failed");
+    #endif
+}
+void TlsFixup::restore() {
+    #ifdef __amd64__
+    int r;
+    r = syscall(SYS_arch_prctl, ARCH_SET_FS, fsbase);
+    if (r < 0)
+        throw std::logic_error("arch_prctl failed");
+    r = syscall(SYS_arch_prctl, ARCH_SET_GS, gsbase);
+    if (r < 0)
+        throw std::logic_error("arch_prctl failed");
+    #endif
 }

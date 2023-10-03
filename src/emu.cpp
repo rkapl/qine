@@ -52,18 +52,26 @@ void Emu::static_handler_segv(int sig, siginfo_t *info, void *uctx_void) {
     Process::current()->m_emu.handler_segv(sig, info, uctx_void);
 }
 
-void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
+qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
 {
+    m_tls_fixup.restore();
+
+    // now we have normal C environment
     ExtraContext ectx;
     ectx.from_cpu();
     auto ctx = Context(reinterpret_cast<ucontext_t*>(uctx_void), &ectx);
+    if ((ctx.reg_cs() & SegmentDescriptor::SEL_LDT) == 0) {
+        debug_hook();
+        fprintf(stderr, "Sigsegv in host code\n");
+        exit(1);
+    }
     auto eip = ctx.reg_eip();
     bool handled = false;
 
     if (ctx.reg_es() == Qnx::MAGIC_PTR_SELECTOR) {
         // hack: migrate to LDT
         ctx.reg_es() = Qnx::MAGIC_PTR_SELECTOR | 4;
-        // printf("Migrating to LDT @ %x\n", ctx.reg(REG_EIP));
+        // printf("Migrating to LDT @ %x\n", ctx.reg_eip());
         handled = true;
     }
 
@@ -285,6 +293,8 @@ void Emu::static_handler_user(int sig, siginfo_t *info, void *uctx)
 }
 
 void Emu::enter_emu() {
+    m_tls_fixup.save();
+
     struct sigaction sa = {};
     sa.sa_sigaction = Emu::static_handler_segv;
     sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
