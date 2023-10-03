@@ -4,7 +4,10 @@
 #include <stdint.h>
 
 using SegmentId = uint16_t;
-using GuestPtr = uint32_t;
+template <class T>
+using GuestPtrTo = uint32_t;
+
+using GuestPtr = GuestPtrTo<void>;
 
 enum class RwOp {
     READ = 0,

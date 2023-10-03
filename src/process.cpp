@@ -14,7 +14,8 @@
 
 Process* Process::m_current = nullptr;
 
-Process::Process(): m_segment_descriptors(1024), m_magic_guest_pointer(FarPointer::null())
+Process::Process(): 
+    m_segment_descriptors(1024), m_magic_guest_pointer(FarPointer::null())
 {
 }
 
@@ -23,8 +24,10 @@ Process::~Process() {}
 void Process::initialize() {
     assert(!m_current);
     m_current = new Process();
+    m_current->m_startup_context = Context(&m_current->m_startup_context_main, &m_current->m_startup_context_extra);
+    memset(&m_current->m_startup_context_main, 0xcc, sizeof(m_current->m_startup_context_main));
+    memset(&m_current->m_startup_context_extra, 0xcc, sizeof(m_current->m_startup_context_extra));
     m_current->m_emu.init();
-    memset(&m_current->startup_context, 0xcc, sizeof(m_current->startup_context));
 }
 
 Qnx::pid_t Process::pid()
@@ -110,8 +113,7 @@ void Process::setup_magic(SegmentDescriptor *data_sd, SegmentAllocator& alloc)
 
 void Process::setup_startup_context(int argc, char **argv)
 {
-    Context ctx(&startup_context);
-
+    auto& ctx = m_startup_context;
     if (!m_load.entry_main.has_value() || ! m_load.entry_slib.has_value() || !m_load.data_segment.has_value()) {
         throw GuestStateException("Loading incomplete");
     }
@@ -154,8 +156,8 @@ void Process::setup_startup_context(int argc, char **argv)
     ctx.push_stack(main_entry.m_offset);
 
     auto slib_entry = m_load.entry_slib.value();
-    ctx.reg(REG_CS) = slib_entry.m_segment;
-    ctx.reg(REG_EIP) = slib_entry.m_offset;
+    ctx.reg_cs() = slib_entry.m_segment;
+    ctx.reg_eip() = slib_entry.m_offset;
 
     printf("Real start: %x:%x\n", slib_entry.m_segment, slib_entry.m_offset);
     printf("Program start: %x:%x\n", main_entry.m_segment, main_entry.m_offset);
@@ -163,9 +165,9 @@ void Process::setup_startup_context(int argc, char **argv)
     data_sd->update_descriptors();
 
     /* What we have allocated */
-    ctx.reg(REG_EBX) = data_seg->size();
+    ctx.reg_ebx() = data_seg->size();
     /* No, there is nothing free, allocate your own :) */
-    ctx.reg(REG_ECX) = 0;
+    ctx.reg_ecx() = 0;
 
     // ctx.dump(stdout);
 

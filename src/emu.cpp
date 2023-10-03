@@ -41,7 +41,7 @@ void Emu::init() {
 
     stack_t sas = {};
     sas.ss_size = MemOps::PAGE_SIZE*8;
-    sas.ss_sp = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(m_stack->location()) +MemOps::PAGE_SIZE);
+    sas.ss_sp = reinterpret_cast<void*>(m_stack->location() + MemOps::PAGE_SIZE);
     sas.ss_flags = 0;
     if (sigaltstack(&sas, nullptr) != 0) {
         throw std::runtime_error(strerror(errno));
@@ -54,20 +54,22 @@ void Emu::static_handler_segv(int sig, siginfo_t *info, void *uctx_void) {
 
 void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
 {
-    auto ctx = Context(reinterpret_cast<ucontext_t*>(uctx_void));
-    auto eip = ctx.reg(REG_EIP);
+    ExtraContext ectx;
+    ectx.from_cpu();
+    auto ctx = Context(reinterpret_cast<ucontext_t*>(uctx_void), &ectx);
+    auto eip = ctx.reg_eip();
     bool handled = false;
 
-    if (ctx.reg(REG_ES) == Qnx::MAGIC_PTR_SELECTOR) {
+    if (ctx.reg_es() == Qnx::MAGIC_PTR_SELECTOR) {
         // hack: migrate to LDT
-        ctx.reg(REG_ES) = Qnx::MAGIC_PTR_SELECTOR | 4;
+        ctx.reg_es() = Qnx::MAGIC_PTR_SELECTOR | 4;
         // printf("Migrating to LDT @ %x\n", ctx.reg(REG_EIP));
         handled = true;
     }
 
     if (ctx.read<uint8_t>(Context::CS, eip) == 0xCD && ctx.read<uint8_t>(Context::CS, eip + 1) == 0xF2) {
         dispatch_syscall(ctx);
-        ctx.reg(REG_EIP) += 2;
+        ctx.reg_eip() += 2;
         handled = true;
     }
     
@@ -75,6 +77,7 @@ void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
         ctx.dump(stdout);
         debug_hook();
     }
+    ectx.to_cpu();
 }
 
 void Emu::dispatch_syscall(Context& ctx)
@@ -90,18 +93,18 @@ void Emu::dispatch_syscall(Context& ctx)
         default:
             printf("Unknown syscall %d\n", syscall);
             ctx.proc()->set_errno(Qnx::QENOSYS);
-            ctx.reg(REG_EAX) = -1;
+            ctx.reg_eax() = -1;
     }
 }
 
 void Emu::syscall_sendfdmx(Context &ctx)
 {
-    uint32_t ds = ctx.reg(REG_DS);
-    int fd = ctx.reg(REG_EDX);
+    uint32_t ds = ctx.reg_ds();
+    int fd = ctx.reg_edx();
     uint8_t send_parts = ctx.reg_ah();
     uint8_t recv_parts = ctx.reg_ch();
-    GuestPtr send_data = ctx.reg(REG_EBX);
-    GuestPtr recv_data = ctx.reg(REG_ESI);
+    GuestPtr send_data = ctx.reg_ebx();
+    GuestPtr recv_data = ctx.reg_esi();
 
     Msg msg(Process::current(), send_parts, FarPointer(ds, send_data),  recv_parts, FarPointer(ds, recv_data));
 
@@ -110,12 +113,12 @@ void Emu::syscall_sendfdmx(Context &ctx)
 
 void Emu::syscall_sendmx(Context &ctx)
 {
-    uint32_t ds = ctx.reg(REG_DS);
-    Qnx::pid_t pid = ctx.reg(REG_EDX);
+    uint32_t ds = ctx.reg_ds();
+    Qnx::pid_t pid = ctx.reg_edx();
     uint8_t send_parts = ctx.reg_ah();
     uint8_t recv_parts = ctx.reg_ch();
-    GuestPtr send_data = ctx.reg(REG_EBX);
-    GuestPtr recv_data = ctx.reg(REG_ESI);
+    GuestPtr send_data = ctx.reg_ebx();
+    GuestPtr recv_data = ctx.reg_esi();
 
     Msg msg(Process::current(), send_parts, FarPointer(ds, send_data),  recv_parts, FarPointer(ds, recv_data));
     // TODO: handle faults
@@ -124,7 +127,7 @@ void Emu::syscall_sendmx(Context &ctx)
 
 void Emu::dispatch_msg(int pid, Context& ctx, Msg& msg)
 {
-    ctx.reg(REG_EAX) = 0;
+    ctx.reg_eax() = 0;
     switch (pid) {
     case 1:
         msg_handle(msg);
@@ -132,7 +135,7 @@ void Emu::dispatch_msg(int pid, Context& ctx, Msg& msg)
     default:
         printf("Unknown message destination %d\n", pid);
         ctx.proc()->set_errno(Qnx::QESRCH);
-        ctx.reg(REG_EAX) = -1;
+        ctx.reg_eax() = -1;
     }
 }
 
@@ -252,30 +255,32 @@ void Emu::debug_hook() {
 
 void Emu::static_handler_user(int sig, siginfo_t *info, void *uctx)
 {
-    auto ctx = reinterpret_cast<ucontext_t*>(uctx);
+    ExtraContext ectx;
+    ectx.from_cpu();
+    auto sig_ctx = reinterpret_cast<ucontext_t*>(uctx);
+    Context ctx(sig_ctx, &ectx);
     auto proc = Process::current();
 
-    std::array<int, 13> transfer_regs = {
-        REG_EIP,
-        REG_CS,
-        REG_SS,
-        REG_ESP,
-        REG_DS,
-        REG_ES,
-        REG_FS,
-        REG_EAX,
-        REG_EBX,
-        REG_ECX,
-        REG_EDX,
-        REG_ESI,
-        REG_EDI,
-    };
+    #define SYNC(x) ctx.reg_##x() = proc->m_startup_context.reg_##x()
+    SYNC(eip);
+    SYNC(cs);
+    SYNC(ss);
+    SYNC(esp);
+    SYNC(ds);
+    SYNC(es);
+    SYNC(fs);
+    SYNC(gs);
 
-    proc->startup_context.uc_mcontext.gregs[REG_EIP] = 0x7d0;
+    SYNC(eax);
+    SYNC(ebx);
+    SYNC(ecx);
+    SYNC(edx);
+    SYNC(eax);
+    SYNC(esi);
+    SYNC(edi);
+    #undef SYNC
 
-    for (int reg: transfer_regs) {
-        ctx->uc_mcontext.gregs[reg] = proc->startup_context.uc_mcontext.gregs[reg];
-    }
+    ectx.to_cpu();
     printf("Entering emulation\n");
 }
 

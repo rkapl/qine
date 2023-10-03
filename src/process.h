@@ -53,7 +53,10 @@ public:
 
     /* Information modified by loader */
     /* Only the mcontext will actually be used.*/
-    ucontext_t startup_context;
+    ucontext_t m_startup_context_main;
+    ExtraContext m_startup_context_extra;
+    Context m_startup_context;
+
     LoadInfo m_load;
 private:
     NoCopy m_mark_nc;

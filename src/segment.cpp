@@ -11,7 +11,7 @@
 
 Segment::Segment(): 
     m_location(nullptr), 
-    m_paged_size(0), m_reserved(0), m_shared(false)
+    m_paged_size(0), m_limit_size(0), m_reserved(0), m_shared(false)
 {
 }
 
@@ -22,7 +22,7 @@ void Segment::reserve(size_t reservation)
     reservation = MemOps::align_page_up(reservation);
 
     // see https://github.com/wine-mirror/wine/blob/master/loader/preloader.c
-    void *l = mmap(NULL, reservation, PROT_NONE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
+    void *l = mmap(NULL, reservation, PROT_NONE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE | MAP_32BIT, -1, 0);
     if (m_location == MAP_FAILED) {
         throw std::bad_alloc();
     }

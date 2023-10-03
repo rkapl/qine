@@ -9,7 +9,7 @@
 #include "process.h"
 #include "types.h"
 
-Context::Context(ucontext_t *ctx): m_ctx(ctx), m_proc(Process::current()) {}
+Context::Context(ucontext_t *ctx, ExtraContext *ectx): m_ctx(ctx), m_ectx(ectx), m_proc(Process::current()) {}
 
 void* Context::translate(SegmentRegister s, uint32_t addr, uint32_t size, RwOp write)
 {
@@ -33,32 +33,32 @@ uint16_t Context::get_seg(SegmentRegister r) {
     switch (r) {
         default:
         case CS:
-            return reg(REG_CS);
+            return reg_cs();
         case DS:
-            return reg(REG_DS);
+            return reg_ds();
         case ES:
-            return reg(REG_ES);
+            return reg_es();
         case FS:
-            return reg(REG_FS);
+            return reg_fs();
         case SS:
-            return reg(REG_SS);
+            return reg_ss();
     }
 }
 
 void Context::push_stack(uint32_t value) {
-    reg(REG_ESP) -= 4;
-    write(SS, reg(REG_ESP), value);
+    reg_esp() -= 4;
+    write(SS, reg_esp(), value);
 }
 
 uint32_t Context::pop_stack() {
-    auto v = read<uint32_t>(SS, reg(REG_ESP));
-    reg(REG_ESP) += 4;
+    auto v = read<uint32_t>(SS, reg_esp());
+    reg_esp() += 4;
     return v;
 }
 
 void Context::dump(FILE *s) {
-    auto cs = reg(REG_CS);
-    auto ip = reg(REG_EIP);
+    auto cs = reg_cs();
+    auto ip = reg_eip();
     try {
         auto linear = translate(Context::CS, ip, 0);
         fprintf(s, "handler_segv %x:%x, linear %p\n", cs, ip, linear);
@@ -67,24 +67,24 @@ void Context::dump(FILE *s) {
     }
 
     fprintf(s, "EAX: %08X  EBX: %08x  ECX: %08X  EDX: %08X\n",
-        reg(REG_EAX), reg(REG_EBX), reg(REG_ECX), reg(REG_EDX)
+        reg_eax(), reg_ebx(), reg_ecx(), reg_edx()
     );
 
-    fprintf(s, "EDX: %08X  ESI: %08x  EDI: %08X  EBP: %08X\n",
-        reg(REG_EDX), reg(REG_ESI), reg(REG_EDI), reg(REG_EBP)
+    fprintf(s, "ESI: %08x  EDI: %08X  EBP: %08X\n",
+        reg_esi(), reg_edi(), reg_ebp()
     );
 
     fprintf(s, "ESP: %08X  EFL: %08X  EIP: %08X\n",
-        reg(REG_ESP), reg(REG_EFL), reg(REG_EIP)
+        reg_esp(), reg_eflags(), reg_eip()
     );
 
     fprintf(s, "CS: %04X  SS: %04X  DS: %04X  ES: %04X FS: %04X GS: %04X\n",
-        reg(REG_CS), reg(REG_SS), reg(REG_DS), reg(REG_ES), reg(REG_FS), reg(REG_GS)
+        reg_cs(), reg_ss(), reg_ds(), reg_es(), reg_fs(), reg_gs()
     );
 
     fprintf(s, "-- stack --\n");
     for (int i = 0; i < 17; i++) {
-        auto addr = reg(REG_ESP) + i * 4;
+        auto addr = reg_esp() + i * 4;
         fprintf(s, "%08X: %08X\n", addr, read<uint32_t>(SS, addr));
     }
 
@@ -112,4 +112,18 @@ std::string Context::read_string(FarPointer ptr, size_t size) {
         acc.push_back(mem[i]);
     }
     return acc;
+}
+
+void ExtraContext::from_cpu() {
+    __asm__ ("mov %%ds, %0": "=r" (ds));
+    __asm__ ("mov %%es, %0": "=r" (es));
+    __asm__ ("mov %%fs, %0": "=r" (fs));
+    __asm__ ("mov %%gs, %0": "=r" (gs));
+}
+
+void ExtraContext::to_cpu() {
+    __asm__ ("mov %0, %%ds":: "r" (ds));
+    __asm__ ("mov %0, %%es":: "r" (es));
+    //__asm__ ("mov %0, %%fs":: "r" (fs));
+    __asm__ ("mov %0, %%gs":: "r" (gs));
 }

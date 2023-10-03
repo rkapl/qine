@@ -19,8 +19,8 @@
 #include "types.h"
 #include "context.h"
 
-static_assert(sizeof(lmf_header) == 48);
-static_assert(sizeof(lmf_record) == 6);
+static_assert(sizeof(lmf_header) == 48, "lmf_header size mimsatch");
+static_assert(sizeof(lmf_record) == 6, "lmf_record size mismatch");
 
 class LoaderFormatException: public std::runtime_error {
 public:
@@ -54,8 +54,8 @@ struct AbstractLoader {
  * The segments are placed from image_base linear adress one after another. The load operations refer to these offsets.
  */
 struct FlatSegment {
-    uintptr_t start;
-    uintptr_t size;
+    uint32_t start;
+    uint32_t size;
     Access type;
 };
 
@@ -118,14 +118,14 @@ void FlatLoader::finalize_segments() {
 
 void FlatLoader::finalize_loading() {
     auto proc = Process::current();
-    auto& mc = proc->startup_context.uc_mcontext;
+    auto& ctx = proc->m_startup_context;
     // protect the segments & create selectors
     for (uint32_t si = 0;  si < m_segments.size(); ++si) {
         const auto& seg = m_segments[si];
         m_mem->change_access(seg.type, seg.start, seg.size);
     }
 
-    mc.gregs[REG_ESP] = m_skip + m_stack;
+    ctx.reg_esp() = m_skip + m_stack;
     m_code_offset = m_segments[m_hdr->code_index].start + m_hdr->code_offset;
 }
 
@@ -175,7 +175,7 @@ void SegmentLoader::alloc_segment(uint32_t id, Access access, uint32_t size) {
     seg->grow(Access::READ_WRITE, aligned_size);
     m_segments[id].segment = seg;
     m_segments[id].final_access = access;
-    printf("Segment %d: size=%x, type=%x, linear=%p\n", id, size, access, seg->location());
+    printf("Segment %d: size=%x, type=%x, linear=%x\n", id, size, access, seg->location());
 }
 
 void SegmentLoader::finalize_segments() {
@@ -195,6 +195,8 @@ void SegmentLoader::finalize_loading() {
         seg.segment->change_access(seg.final_access, 0, seg.segment->size());
     }
     m_code_offset = m_hdr->code_offset;
+    // Above does not work for slib, why?
+    m_code_offset = 0x7d0;
 }
 
 std::shared_ptr<Segment> SegmentLoader::get_segment(uint32_t seg)
@@ -310,7 +312,7 @@ void load_executable(const char* path, bool slib) {
             }
             checked_read("loader: read data header", fd.get(), reinterpret_cast<void*>(&ld), sizeof(ld));
             
-            auto data_size = rec.data_nbytes - sizeof(ld);
+            uint32_t data_size = rec.data_nbytes - sizeof(ld);
             printf("load data: segment=0x%x, offset=0x%x, size=0x%x\n", ld.segment, ld.offset, data_size);
 
             void *dst = loader->get_load_addr(ld, data_size);
@@ -326,10 +328,10 @@ void load_executable(const char* path, bool slib) {
         }
     }
 
-    auto& mc = proc->startup_context.uc_mcontext;
 
     uint16_t cs = 0;
     loader->finalize_loading();
+    auto& ctx = proc->m_startup_context;
     for (uint32_t si = 0; si < segment_count; si++) {
         /* The selector assignment is bit of a guess. Maybe we should also stash them somewhere else? */
         auto seg = loader->get_segment(si);
@@ -343,19 +345,19 @@ void load_executable(const char* path, bool slib) {
             }
         }
         if (hdr.header.heap_index == si) {
-            mc.gregs[REG_DS] = sd->selector();
+            ctx.reg_ds() = sd->selector();
             proc->m_load.data_segment = sd->id();
         }
         if (hdr.header.stack_index == si) {
-            mc.gregs[REG_SS] = sd->selector();
+            ctx.reg_ss() = sd->selector();
         }
         if (hdr.header.argv_index == si) {
-            mc.gregs[REG_ES] = sd->selector();
-            mc.gregs[REG_FS] = sd->selector();
-            mc.gregs[REG_GS] = sd->selector();
+            ctx.reg_es() = sd->selector();
+            ctx.reg_fs() = sd->selector();
+            ctx.reg_gs() = sd->selector();
         }
     }
     if (!slib) {
-        mc.gregs[REG_EDX] = mc.gregs[REG_ESP] - hdr.header.stack_nbytes;
+        ctx.reg_edx() = ctx.reg_esp() - hdr.header.stack_nbytes;
     }
 }

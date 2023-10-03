@@ -13,15 +13,15 @@ struct MagicPtr {
   uint32_t segment;
 };
 struct Magic {
-    Qnx::mpid_t                 my_pid;
-    short int                zero0;
-    Qnx::mpid_t                 dads_pid;
-    short int                zero1;
-    Qnx::nid_t                    my_nid;
-    int32_t                 Errno;
+    Qnx::mpid_t            my_pid;
+    short int              zero0;
+    Qnx::mpid_t            dads_pid;
+    short int              zero1;
+    Qnx::nid_t             my_nid;
+    int32_t                Errno;
     int16_t                my_tid;
     int16_t                zero2[1];
-    void                    *zero4[5];          /* offset = 20(0x14) */
+    GuestPtr               zero4[5];          /* offset = 20(0x14) */
  /*-
   * The 16-bit version never declared these members, so programs and
   * lib routines went merily off using strange constants.
@@ -42,18 +42,18 @@ struct Magic {
   *         sptrs[10]    == &errno.
   *         sptrs[10..20] == unknown_sptrs[0..11]
   */
-    void                    *sptrs[1];  /* offset 40 (0x28) */
-    void                    *sigtab;    /* signal table */
-    void                    *cmd;               /* pointer to command */
-    char                    *cwd;
-    char                    *root_prefix;
-    void                    *termst;
-    void                    *kernel_emt;
-    void                    *qw;
+    GuestPtr                sptrs[1];  /* offset 40 (0x28) */
+    GuestPtr                    sigtab;    /* signal table */
+    GuestPtr                    cmd;               /* pointer to command */
+    GuestPtr                    cwd;
+    GuestPtr                    root_prefix;
+    GuestPtr                    termst;
+    GuestPtr                    kernel_emt;
+    GuestPtr                    qw;
     int                     _cs;
-    void                    *_efgfmt;
-    int                     *errno_ptr;
-    void                    *unknown_sptrs[9];
+    GuestPtr                    _efgfmt;
+    GuestPtrTo<int32_t>           errno_ptr;
+    GuestPtr                    unknown_sptrs[9];
     /*
      * this area is used by the termination routines to shut the process
      * down.

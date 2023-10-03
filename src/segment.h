@@ -31,8 +31,8 @@ public:
     bool check_bounds(size_t offset, size_t size) const;
     void* pointer(size_t offset, size_t size);
 
-    void* location() const  {
-        return m_location;
+    GuestPtr location() const  {
+        return static_cast<GuestPtr>(reinterpret_cast<uintptr_t>(m_location));
     }
     size_t size() const {
         return m_limit_size ? m_limit_size : m_paged_size;

@@ -4,7 +4,7 @@
 int main(int argc, char **argv) {
     Process::initialize();
 
-    load_executable("/home/roman/build/qnx/qnxdump/boot/sys/Slib32", true);
+    load_executable("/home/rka/tmp/qnxdump/boot/sys/Slib32", true);
     load_executable(argv[1], false);
 
     auto proc = Process::current();

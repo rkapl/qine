@@ -1,4 +1,5 @@
 #include <asm/ldt.h>
+#include <cerrno>
 #include <cstring>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -11,13 +12,13 @@ SegmentDescriptor::SegmentDescriptor(SegmentId id, Access access, const std::sha
     :m_id(id), m_access(access), m_seg(seg) 
 {
     update_descriptors();
-    printf("LDT %d: %p (access %d)\n", id, m_seg->location(), m_access);
+    printf("LDT %d: %x (access %d)\n", id, m_seg->location(), m_access);
 }
 
 void SegmentDescriptor::update_descriptors() {
     struct user_desc ud = {0};
     ud.entry_number = m_id;
-    ud.base_addr = reinterpret_cast<uintptr_t>(m_seg->location());
+    ud.base_addr = m_seg->location();
     // TODO: fix big segments
     if (m_seg->size() > 64*1024) {
         ud.limit = m_seg->size() / MemOps::PAGE_SIZE;
