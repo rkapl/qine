@@ -7,7 +7,6 @@
 #include <stdexcept>
 #include <stdio.h>
 #include <stdlib.h>
-#include <ranges>
 #include <sys/types.h>
 #include <sys/ucontext.h>
 
