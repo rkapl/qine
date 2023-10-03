@@ -41,7 +41,7 @@ public:
     SegmentDescriptor* create_segment_descriptor(Access access, const std::shared_ptr<Segment>& mem);
     SegmentDescriptor* create_segment_descriptor_at(Access access, const std::shared_ptr<Segment>& mem, SegmentId id);
 
-    void setup_startup_context();
+    void setup_startup_context(int argc, char **argv);
     void enter_emu();
 
     void* translate_segmented(FarPointer ptr, uint32_t size = 0, RwOp op = RwOp::READ);

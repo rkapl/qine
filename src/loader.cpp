@@ -356,4 +356,7 @@ void load_executable(const char* path, bool slib) {
             mc.gregs[REG_GS] = sd->selector();
         }
     }
+    if (!slib) {
+        mc.gregs[REG_EDX] = mc.gregs[REG_ESP] - hdr.header.stack_nbytes;
+    }
 }

@@ -31,4 +31,4 @@ after BSS.
 The registers have following meaning on loader <-> slib and slib <-> program interface:
 EBX = curbrk (end of sbrk memory)
 ECX = free memory after curbrk (basically data segmen end - curbrk)
-
+EDX = stack low

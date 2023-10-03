@@ -108,10 +108,9 @@ void Process::setup_magic(SegmentDescriptor *data_sd, SegmentAllocator& alloc)
 
 }
 
-void Process::setup_startup_context()
+void Process::setup_startup_context(int argc, char **argv)
 {
     Context ctx(&startup_context);
-
 
     if (!m_load.entry_main.has_value() || ! m_load.entry_slib.has_value() || !m_load.data_segment.has_value()) {
         throw GuestStateException("Loading incomplete");
@@ -141,17 +140,13 @@ void Process::setup_startup_context()
 
     /* Argv */
     ctx.push_stack(0);
-    alloc.push_string("10");
-    ctx.push_stack(alloc.offset());
-    alloc.push_string("+");
-    ctx.push_stack(alloc.offset());
-    alloc.push_string("10");
-    ctx.push_stack(alloc.offset());
-    alloc.push_string("/bin/expr");
-    ctx.push_stack(alloc.offset());
+    for (int i = argc - 1; i >= 0; i--) {
+        alloc.push_string(argv[i]);
+        ctx.push_stack(alloc.offset());
+    }
 
     /* Argc */
-    ctx.push_stack(4);
+    ctx.push_stack(argc);
 
     /* Entry points*/
     auto main_entry = m_load.entry_main.value();

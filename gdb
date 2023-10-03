@@ -6,4 +6,4 @@ ninja -C build && gdb \
     -ex 'b Emu::debug_hook' \
     "$@" \
     -ex 'r' \
-    --args build/qine ~/build/qnx/qnxdump/boot/sys/Slib32
+    --args build/qine
