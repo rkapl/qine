@@ -5,6 +5,8 @@
 
 /* Taken from Watcom headers. The far pointer to magic is stored in global selector 0x78. */
 namespace Qnx {
+    static constexpr int PATH_MAX = 256;
+
     typedef int32_t pid_t;            /* Used for process IDs & group IDs */
     typedef int16_t mpid_t;           /* Used for process & group IDs in messages */
     typedef int32_t uid_t;             /* Used for user IDs            */

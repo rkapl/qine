@@ -12,6 +12,9 @@
 #include "context.h"
 #include "cpp.h"
 #include "emu.h"
+#include "process_fd.h"
+#include "main_handler.h"
+#include "msg_handler.h"
 #include "qnx/magic.h"
 #include "qnx/procenv.h"
 #include "qnx/types.h"
@@ -22,6 +25,12 @@
 #include "segment_descriptor.h"
 
 class Segment;
+class MsgInfo;
+
+class CwdTooLong: public std::runtime_error {
+public:
+    CwdTooLong(): std::runtime_error("working directory path too long for QNX") {}
+};
 
 struct LoadInfo {
     std::optional<FarPointer> entry_main;
@@ -33,6 +42,7 @@ struct LoadInfo {
 class Process{
     friend class Emu;
     friend class Context;
+    friend class MainHandler;
 public:
     static inline Process* current();
     static void initialize();
@@ -40,14 +50,16 @@ public:
     std::shared_ptr<Segment> allocate_segment();
     SegmentDescriptor* create_segment_descriptor(Access access, const std::shared_ptr<Segment>& mem);
     SegmentDescriptor* create_segment_descriptor_at(Access access, const std::shared_ptr<Segment>& mem, SegmentId id);
+    void* translate_segmented(FarPointer ptr, uint32_t size = 0, RwOp op = RwOp::READ);
 
     void setup_startup_context(int argc, char **argv);
     void enter_emu();
 
-    void* translate_segmented(FarPointer ptr, uint32_t size = 0, RwOp op = RwOp::READ);
+    void handle_msg(MsgInfo& m);
 
     Qnx::pid_t pid();
     Qnx::pid_t parent_pid();
+    Qnx::nid_t nid();
 
     void set_errno(int v);
 
@@ -72,6 +84,9 @@ private:
 
     IntrusiveList::List<Segment> m_segments;
     IdMap<SegmentDescriptor> m_segment_descriptors;
+    
+    IdMap<QnxFd> m_fds;
+    MainHandler m_main_handler;
 
     std::shared_ptr<Segment> m_magic_pointer;
     FarPointer m_magic_guest_pointer;

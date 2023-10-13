@@ -1,13 +1,19 @@
+
 msg segment_realloc {
-    @type: 0x9;
-    @subtype: 0x3;
-    sel: u16;
-    srcpid: pid;
-    dstpid: pid;
-    flags: u16 hex;
-    padd_1: u16;
-    addr: u32 hex;
-    nbytes: u32 hex;
+    type: 9;
+    subtype: 3;
+
+    request {
+        sel: u16;
+        srcpid: pid;
+        padd_1: u16;
+        dstpid: pid;
+        padd_2: u16;
+        flags: u16 hex;
+        padd_3: u16;
+        addr: u32 hex;
+        nbytes: u32 hex;
+    }
 
     reply {
         status: u16;
@@ -18,8 +24,69 @@ msg segment_realloc {
     }
 }
 
+
 msg terminate {
-    @type: 0x18;
-    signum: u16;
-    status: u32;
+    type: 24;
+
+    request {
+        signum: u16;
+        status: u32;
+    }
+
+    reply {}
+}
+
+struct open {
+    type: u16 hex;
+    subtype: u16 hex;
+
+    fd: u16 hex;
+    version_cycle: u8 hex;
+    eflag: u8 hex;
+    nid: nid;
+    pid: pid;
+    sflag: u16 hex;
+    oflag: u16 hex;
+    mode: u16 hex;
+    zero: u32 hex;
+    path: path;
+}
+
+msg open {
+    # Seems to match _io_open, used also for reply and mayba other commds
+    type: 25;
+    subtype: 0;
+    
+    request open;
+    reply open;
+}
+
+struct fd_request {
+    type: u16 hex;
+    subtype: u16 hex;
+    fd: u16;
+    owner_pid: pid;
+    zero1: u16;
+    nid: nid;
+    pid: pid;
+    zero2: u16;
+    vid: pid;
+    zero3: u16;
+    flags: u16;
+    handle: u16;
+    zero4: u16;
+}
+
+struct fd_reply1 {
+    status: u16;
+    fd: u16;
+    padd: u16;
+    padd: u16;
+}
+
+msg fd {
+    type: 22;
+
+    request fd_request;
+    reply fd_reply1;
 }

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <sys/uio.h>
 
@@ -28,6 +29,18 @@ Msg::~Msg() {
 
 }
 
+void Msg::dump_send(FILE *f) {
+    auto i = iterate_send();
+
+    for (;;) {
+        auto s = i.next(1);
+        if (s.is_empty())
+            break;
+        fprintf(f, "%02X ", *static_cast<uint8_t*>(m_proc->translate_segmented(s.m_ptr)));
+    }
+    fprintf(f, "\n");
+}
+
 auto Msg::iterate_send() -> Iterator{
     return Iterator(m_send, m_send_parts);
 }
@@ -44,15 +57,18 @@ Msg::Iterator::Iterator(Qnx::mxfer_entry *chunks, size_t chunk_count):
 FarSlice Msg::Iterator::next(size_t size)
 {
     normalize();
+    if (m_i == m_chunk_count)
+        return FarSlice(FarPointer::null(), 0);
+    
     Qnx::mxfer_entry *c = &m_chunks[m_i];
     size_t to_read = c->mxfer_len - m_offset;
     if (to_read > size) {
         to_read = size;
     }
 
+    FarSlice slice(FarPointer(c->mxfer_seg, c->mxfer_off + m_offset), to_read);
     m_offset += to_read;
-
-    FarSlice slice(FarPointer(c->mxfer_seg, c->mxfer_off), to_read);
+    // printf("-- %lx %lx %lx\n", m_i, m_offset_of_chunk, m_offset);
     return slice;
 }
 

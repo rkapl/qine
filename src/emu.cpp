@@ -1,27 +1,19 @@
-#include <array>
-#include <cerrno>
-#include <csignal>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include <stdexcept>
-#include <sys/types.h>
-#include <sys/ucontext.h>
-#include <sys/uio.h>
-#include <unistd.h>
 #include <vector>
+#include <errno.h>
+#include <string.h>
 
 #include "emu.h"
 #include "gen_msg/io.h"
 #include "mem_ops.h"
 #include "msg/meta.h"
-#include "process.h"
+#include "msg_handler.h"
 #include "qnx/errno.h"
 #include "qnx/magic.h"
 #include "qnx/types.h"
 #include "qnx/msg.h"
 #include "msg/dump.h"
+#include "process.h"
 #include "segment.h"
 #include "segment_descriptor.h"
 #include "types.h"
@@ -109,6 +101,7 @@ void Emu::dispatch_syscall(Context& ctx)
 
 void Emu::syscall_sendfdmx(Context &ctx)
 {
+    auto proc = Process::current();
     uint32_t ds = ctx.reg_ds();
     int fd = ctx.reg_edx();
     uint8_t send_parts = ctx.reg_ah();
@@ -116,13 +109,20 @@ void Emu::syscall_sendfdmx(Context &ctx)
     GuestPtr send_data = ctx.reg_ebx();
     GuestPtr recv_data = ctx.reg_esi();
 
-    Msg msg(Process::current(), send_parts, FarPointer(ds, send_data),  recv_parts, FarPointer(ds, recv_data));
+    Msg msg(proc, send_parts, FarPointer(ds, send_data),  recv_parts, FarPointer(ds, recv_data));
+    MsgInfo info;
+    info.m_ctx = &ctx;
+    info.m_msg = &msg;
+    info.m_via_fd = true;
+    info.m_fd = fd;
 
-    dispatch_msg(1, ctx, msg);
+    proc->handle_msg(info);
 }
 
 void Emu::syscall_sendmx(Context &ctx)
 {
+    auto proc = Process::current();
+    
     uint32_t ds = ctx.reg_ds();
     Qnx::pid_t pid = ctx.reg_edx();
     uint8_t send_parts = ctx.reg_ah();
@@ -131,158 +131,17 @@ void Emu::syscall_sendmx(Context &ctx)
     GuestPtr recv_data = ctx.reg_esi();
 
     Msg msg(Process::current(), send_parts, FarPointer(ds, send_data),  recv_parts, FarPointer(ds, recv_data));
-    // TODO: handle faults
-    dispatch_msg(pid, ctx, msg);
-}
+    // TODO: handle faults etc.
+    MsgInfo info;
+    info.m_ctx = &ctx;
+    info.m_msg = &msg;
+    info.m_via_fd = false;
+    info.m_pid = pid;
 
-void Emu::dispatch_msg(int pid, Context& ctx, Msg& msg)
-{
-    ctx.reg_eax() = 0;
-    switch (pid) {
-    case 1:
-        msg_handle(msg);
-        break;
-    default:
-        printf("Unknown message destination %d\n", pid);
-        ctx.proc()->set_errno(Qnx::QESRCH);
-        ctx.reg_eax() = -1;
-    }
-}
-
-void Emu::msg_handle(Msg& msg) {
-    Qnx::MsgHeader hdr;
-    msg.read_type(&hdr);
-
-#if 0
-    uint8_t msg_class = hdr.type >> 8;
-    switch (msg_class) {
-        case 0: 
-            QnxMsg::dump_message(stdout, QnxMsg::proc::list, msg);
-            break;
-        case 1: 
-            QnxMsg::dump_message(stdout, QnxMsg::io::list, msg);
-            break;
-    }
-#endif
-
-    switch (hdr.type) {
-        case QnxMsg::proc::segment_realloc::type:
-            switch (hdr.subtype) {
-                case QnxMsg::proc::segment_realloc::subtype:
-                    proc_segment_realloc(msg);
-                    break;
-            }
-            break;
-        case QnxMsg::proc::terminate::type:
-            proc_terminate(msg);
-            break;
-        case QnxMsg::io::read::type:
-            io_read(msg);
-            break;
-        case QnxMsg::io::write::type:
-            io_write(msg);
-            break;
-        case QnxMsg::io::lseek::type:
-            io_lseek(msg);
-            break;
-        default:
-            printf("Unhandled message %x:%x\n", hdr.type, hdr.subtype);
-            break;
-    }
-}
-
-void Emu::proc_terminate(Msg &ctx)
-{
-    QnxMsg::proc::terminate msg;
-    ctx.read_type(&msg);
-    debug_hook();
-    exit(msg.m_status);
-}
-
-void Emu::proc_segment_realloc(Msg &ctx)
-{
-    QnxMsg::proc::segment_realloc msg;
-    ctx.read_type(&msg);
-    // TODO: handle invalid segments
-    auto sd  = Process::current()->descriptor_by_selector(msg.m_sel);
-    auto seg = sd->segment();
-    GuestPtr base = seg->paged_size();
-
-    QnxMsg::proc::segment_realloc_reply reply;
-    memset(&reply, 0, sizeof(reply));
-    if (seg->is_shared()) {
-        reply.m_status = Qnx::QEBUSY;
-    } else {
-        if (seg->size() < msg.m_nbytes) {
-            seg->grow(Access::READ_WRITE, MemOps::align_page_up(msg.m_nbytes - seg->size()));
-            // TODO: this must be done better, the segment must be aware of its descriptors,
-            // at least code and data 
-            sd->update_descriptors();
-        }
-        reply.m_status = Qnx::QEOK;
-        reply.m_sel = msg.m_sel;
-        reply.m_nbytes = seg->size();
-        reply.m_addr = reinterpret_cast<uint32_t>(seg->location()); 
-        //printf("New segment size: %x\n", seg->size());
-    }
-    ctx.write_type(0, &reply);
-}
-
-void Emu::io_lseek(Msg &ctx) {
-    QnxMsg::io::lseek msg;
-    ctx.read_type(&msg);
-
-    // STUB
-
-    QnxMsg::io::lseek_reply reply;
-    reply.m_status = Qnx::QEOK;
-    reply.m_zero = 0;
-    reply.m_offset = 0;
-    ctx.write_type(0, &reply);
-}
-
-void Emu::io_read(Msg &ctx) {
-    QnxMsg::io::read msg;
-    ctx.read_type(&msg);
-
-    std::vector<struct iovec> iov;
-    ctx.write_iovec(sizeof(msg), msg.m_nbytes, iov);
-
-    QnxMsg::io::read_reply reply;
-    int r = readv(msg.m_fd, iov.data(), iov.size());
-    reply.m_zero = 0;
-    if (r < 0) {
-        reply.m_status = errno;
-        reply.m_nbytes = 0;
-    } else {
-        reply.m_status = Qnx::QEOK;
-        reply.m_nbytes = r;
-    }
-    ctx.write_type(0, &reply);
-}
-
-void Emu::io_write(Msg &ctx) {
-    QnxMsg::io::write msg;
-    ctx.read_type(&msg);
-
-    std::vector<struct iovec> iov;
-    ctx.read_iovec(sizeof(msg), msg.m_nbytes, iov);
-
-    QnxMsg::io::write_reply reply;
-    int r = writev(msg.m_fd, iov.data(), iov.size());
-    reply.m_zero = 0;
-    if (r < 0) {
-        reply.m_status = errno;
-        reply.m_nbytes = 0;
-    } else {
-        reply.m_status = Qnx::QEOK;
-        reply.m_nbytes = r;
-    }
-    ctx.write_type(0, &reply);
+    proc->handle_msg(info);
 }
 
 void Emu::debug_hook() {
-
 }
 
 void Emu::static_handler_user(int sig, siginfo_t *info, void *uctx)
@@ -335,6 +194,28 @@ void Emu::enter_emu() {
         throw std::runtime_error(strerror(errno));
     }
     kill(getpid(), SIGUSR1);
+}
+
+#define ERRNO_MAP \
+    MAP(0, Qnx::QEOK) \
+    MAP(EPERM, Qnx::QEPERM) \
+    MAP(ENOENT, Qnx::QENOENT) \
+    MAP(ESRCH, Qnx::QESRCH) \
+    MAP(EINTR, Qnx::QEINTR) \
+    MAP(EIO, Qnx::QEIO) \
+    MAP(ENXIO, Qnx::QENXIO) \
+    MAP(ENOEXEC, Qnx::QENOEXEC) \
+    MAP(EBADF, Qnx::QEBADF) \
+
+
+Qnx::errno_t Emu::map_errno(int v) {
+    #define MAP(l, q) case l: return q;
+    switch(v) {
+        ERRNO_MAP
+        default:
+            return Qnx::QEIO;
+    }
+    #undef MAP
 }
 
 Emu::~Emu() {

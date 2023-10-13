@@ -21,6 +21,8 @@ add_executable(qine
   src/emu.cpp src/emu.h
   src/context.cpp src/context.h
   src/loader.h src/loader.cpp src/loader_format.h
+  src/main_handler.cpp src/main_handler.h
+  src/msg_handler.cpp src/msg_handler.h
   src/process.h src/process.cpp
   src/segment.h src/segment.cpp
   src/segment_descriptor.h src/segment_descriptor.cpp

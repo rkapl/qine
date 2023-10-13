@@ -4,6 +4,10 @@
 
 class Msg;
 
-namespace QnxMsg {
-    void dump_message(FILE* s, const QnxMessageList& list,  Msg& msg);
+namespace Meta {
+    void dump_message(FILE* s, const MessageList& list,  Msg& msg);
+    void dump_structure(FILE* s, int indent, const Struct &str, Msg& msg);
 }
+
+#include "gen_msg/io.h"
+#include "gen_msg/proc.h"

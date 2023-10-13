@@ -1,12 +1,15 @@
 #pragma once
 
+#include <bits/types/FILE.h>
 #include <cassert>
 #include <cstdint>
 #include <stddef.h>
 #include <limits>
 #include <vector>
 
+#include "context.h"
 #include "emu.h"
+#include "msg/meta.h"
 #include "types.h"
 #include "qnx/types.h"
 
@@ -34,6 +37,8 @@ public:
 
     void write_iovec(size_t offset, size_t size, std::vector<iovec>& dst);
     void read_iovec(size_t offset, size_t size, std::vector<iovec>& dst);
+
+    void dump_send(FILE *);
 private:
     // Iterates through chunks, mainting position within chunk
     class Iterator {

@@ -8,15 +8,24 @@
 NUMBER: /0x[0-9a-zA-Z]+/ | /[0-9]+/
 ID: /[_a-zA-Z][_a-zA-Z0-9]*/
 
-start: def_*
+start: (def_msg | def_struct) *
 
-def_kind: "msg" -> kind_msg | "struct" -> kind_struct
-def_: def_kind ID "{" fields "}"
-fields: (field | reply | match_type | match_subtype)*
+def_msg: "msg" ID  "{" type [subtype] request reply "}"
 
-match_type: "@type" ":" NUMBER ";"
-match_subtype: "@subtype" ":" NUMBER ";"
+?type: "type" ":" NUMBER ";"
+?subtype: "subtype" ":" NUMBER ";"
 
-field: ID ":" ID [presentation] ";"
+?request: "request" embedded_struct
+?reply: "reply" embedded_struct
+
+?embedded_struct: struct_body -> embedded_struct_body
+    | type_ref ";"
+
+type_ref: ID
+
+def_struct: "struct" ID struct_body
+
+struct_body: "{" field* "}"
+
+field: ID ":" type_ref [presentation] ";"
 presentation: "hex" -> p_hex
-reply: "reply" "{" fields "}"

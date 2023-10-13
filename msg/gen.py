@@ -18,56 +18,70 @@ args = parser.parse_args()
 
 grammar = lark.Lark((self_path / 'qmsg.lark').read_text())
 
-class DefinitionKind(enum.Enum):
-    MSG = 0
-    MSG_TYPE = 1
-    MSG_SUBTYPE = 2
-    REPLY = 3
-    STRUCT = 4
-
 @dataclass
 class TypeRef:
     name: str
-    c_type: str
-    size: int
-    definition: 'Definition' = None
+    definition: 'Type' = None
 
 @dataclass
-class Definition:
-    kind: DefinitionKind
+class Msg:
     name: str
-    type: int = None
+    type: int
     subtype: int = None
-    reply: 'Definition' = None
-    reply_name: str = None
+
+    request: TypeRef = None
+    reply: TypeRef = None
+
+class Type:
+    name: str
+    c_type: str
+
+    def make_ref(self):
+        return TypeRef(self.name, self)
+
+@dataclass
+class Primitive(Type):
+    name: str
+    c_type: str
+    size: int
+
+@dataclass
+class Struct(Type):
+    name: str = None
     fields: list['Field'] = field(default_factory=list)
 
-    @property
-    def c_name(self):
-        return f'msg_{self.name}'
+    # used to identify if definition was inline of reply or request
+    inline: bool = False
 
     @property
-    def c_ffields(self):
-        return f'msgf_{self.name}'
+    def c_def_struct(self):
+        return f'struct_def_{self.name}'
+
+    @property
+    def c_def_fields(self):
+        return f'struct_fields_{self.name}'
 
 @dataclass
 class Field:
     name: str
-    type: str
-    in_def: Definition = None
-    type_ref: TypeRef = None
+    type: TypeRef
     presentation: str = 'DEFAULT'
+
+    # Containing definition, gets linked in after parsing
+    in_def: Struct = None
 
     @property
     def c_name(self):
-        return f'msgf_{self.in_def.name}_{self.name}'
+        return f'msg_field_{self.in_def.name}_{self.name}'
     
 
 primitive_types = [
-    TypeRef('u8', 'uint8_t', 1),
-    TypeRef('u16', 'uint16_t', 2),
-    TypeRef('u32', 'uint32_t', 4),
-    TypeRef('pid', 'uint32_t', 4),
+    Primitive('u8', 'uint8_t', 1),
+    Primitive('u16', 'uint16_t', 2),
+    Primitive('u32', 'uint32_t', 4),
+    Primitive('pid', 'uint16_t', 2),
+    Primitive('nid', 'uint32_t', 4),
+    Primitive('path', 'Qnx::PathBuf', 256),
 ]
 
 primitive_type_map = {t.name: t for t in primitive_types}
@@ -75,47 +89,94 @@ primitive_type_map = {t.name: t for t in primitive_types}
 class DuplicateDef(Exception):
     pass
 
-class DuplicateField(Exception):
-    pass
-
-def check_duplicate(name_list, exc_factory):
+def check_duplicate(name_list):
     seen = set()
     for d in name_list:
         if d in seen:
-            raise exc_factory(d)
+            raise DuplicateDef(d)
         seen.add(d)
 
+def filter_class(items, *classes):
+    bins = tuple([list() for _ in classes])
+    for item in items:
+        bin_index = None
+        for ci, c in enumerate(classes):
+            if isinstance(item, c):
+                bin_index = ci
+        assert bin_index is not None
+        bins[bin_index].append(item)
+    return bins
+
 class MetaInfo:
-    defs: list[Definition]
-    def __init__(self, defs) -> None:
-        self.defs = defs
-        check_duplicate((d.name for d in defs), DuplicateDef)
+    structs: list[Struct]
+    messages: list[Msg]
+    sruct_map: dict[str, Struct]
+
+    def __init__(self, structs, messages) -> None:
+        self.structs = structs
+        self.messages = messages
+        check_duplicate(d.name for d in self.structs)
+        check_duplicate(d.name for d in self.messages)
+
+    def resolve(self, tr: TypeRef):
+        if tr.definition:
+            return
+        try:
+            tr.definition = self.struct_map[tr.name]
+        except KeyError:
+            tr.definition = primitive_type_map[tr.name]
 
     def prepare(self):
-        self.def_map = {d.name: d for d in self.defs if d.kind == DefinitionKind.STRUCT}
-        flat_defs = []
-        for d in self.defs:
-            if d.reply:
-                flat_defs.append(d.reply)
-            flat_defs.append(d)
-        self.defs = flat_defs
+        # first construct inline defs
+        def add_inline(msg: Msg, sub: TypeRef, suffix):
+            if sub.definition and sub.definition.inline:
+                sub.definition.name = msg.name + suffix
+                self.structs.append(sub.definition)
 
-        for d in self.defs:
-            # Add fields for type and subtype
-            match_fields = []
-            if d.type is not None:
-                match_fields.append(Field('type', 'u16'))
-                d.kind = DefinitionKind.MSG_TYPE
-                if d.subtype is not None:
-                    d.kind = DefinitionKind.MSG_SUBTYPE
-                    match_fields.append(Field('subtype', 'u16'))
-            d.fields = match_fields + d.fields
+        for msg in self.messages:
+            add_inline(msg, msg.request, '_request')
+            add_inline(msg, msg.reply, '_reply')
 
+        self.struct_map = {d.name: d for d in self.structs}
+
+        # Resolve everything
+        for msg in self.messages:
+            self.resolve(msg.request)
+            self.resolve(msg.reply)
+        
+        for s in self.structs:
+            for f in s.fields:
+                self.resolve(f.type)
+
+        # Now handle type and subtype
+        for msg in self.messages:
+            d = msg.request.definition
+            assert isinstance(d, Struct)
+            fields = ['type']
+            if msg.subtype is not None:
+                fields.append('subtype')
+
+            if d.inline:
+                # Add them for inline requests
+                u16 = primitive_type_map['u16'].make_ref()
+                d.fields = [Field(f, u16, in_def=d, presentation='HEX') for f in fields] + d.fields
+            else:
+                # Check existence
+                missing = set(fields) - set(f.name for f in d.fields)
+                if len(missing) > 0:
+                    raise Exception(f'Missing fields {missing} on {d.name}  ')
+
+        # And check the struct fields and resolve padds
+        for d in self.structs:
+            c = 0
+            for f in d.fields:
+                if f.name == 'padd':
+                    c += 1
+                    f.name = f'padd_{c}'
+            check_duplicate(f.name for f in d.fields)
             for f in d.fields:
                 f.in_def = d
-                f.type_ref = primitive_type_map.get(f.type) or self.def_map.get(f.type)
-                if f.type_ref is None:
-                    raise KeyError(f.type)
+
     
     def write_hdr(self, name, o):
         o.write('#pragma once\n')
@@ -123,18 +184,21 @@ class MetaInfo:
 
         o.write(f'namespace QnxMsg::{name} {{\n');
 
-        for d in self.defs:
-            o.write(f'struct {d.name} {{\n')
-            if d.type is not None:
-                o.write(f'   static constexpr uint16_t type = {d.type};\n')
-            if d.subtype is not None:
-                o.write(f'   static constexpr uint16_t subtype = {d.subtype};\n')
-
-            for f in d.fields:
-                o.write(f'   {f.type_ref.c_type} m_{f.name};\n')
+        for s in self.structs:
+            o.write(f'struct {s.name} {{\n')
+            for f in s.fields:
+                o.write(f'   {f.type.definition.c_type} m_{f.name};\n')
             o.write('} qine_attribute_packed;\n')
+
+        for m in self.messages:
+            o.write(f'namespace msg_{m.name} {{\n')
+            if m.type is not None:
+                o.write(f'   static constexpr int TYPE = {m.type};\n')
+            if m.subtype is not None:
+                o.write(f'   static constexpr int SUBTYPE = {m.subtype};\n')
+            o.write('}\n')
     
-        o.write('extern const QnxMessageList list;\n')
+        o.write('extern const Meta::MessageList list;\n')
 
         o.write('}\n')
     
@@ -152,31 +216,39 @@ class MetaInfo:
         o.write(f'#include "{name}.h"\n')
 
         o.write(f'namespace QnxMsg::{name} {{\n');
-        o.write('using F = QnxMessageField::Format;\n')
-        o.write('using P = QnxMessageField::Presentation;\n');
+        o.write('using F = Meta::Field::Format;\n')
+        o.write('using P = Meta::Field::Presentation;\n');
 
-        for d in self.defs:
-            for f in d.fields:
-                format = 'SUB' if f.type_ref.definition else f.type_ref.name.upper()
-                c_def('static', f'QnxMessageField {f.c_name}',
-                      [c(f.name), f'offsetof({d.name}, m_{f.name})', f'sizeof({f.type_ref.c_type})', 'F::' + format, 'P::' + f.presentation])
+        # Structures and their fields
+        for s in self.structs:
+            for f in s.fields:
+                fd = f.type.definition
+                head = [c(f.name), f'offsetof({s.name}, m_{f.name})', f'sizeof({fd.c_type})']
+                if isinstance(fd, Primitive):
+                    c_def('static', f'Meta::Field {f.c_name}',
+                      head + ['F::' + fd.name.upper(), 'P::' + f.presentation])
+                elif isinstance(fd, Struct):
+                    c_def('static', f'Meta::Field {f.c_name}',
+                      head + ['F::SUB', 'P::DEFAULT', fd.c_def_struct])
+                
+            c_def('static', f'Meta::Field {s.c_def_fields}[]', [f.c_name for f in s.fields])
 
-            c_def('static', f'QnxMessageField msgf_{d.name}[]', [f'msgf_{d.name}_{f.name}' for f in d.fields])
+            c_def('static', f'Meta::Struct {s.c_def_struct}', [
+               len(s.fields), s.c_def_fields, f'sizeof({s.name})'
+            ])
+            o.write('\n')
 
-            resolved_reply = 'NULL'
-            if d.reply is not None:
-                resolved_reply = '&' + d.reply.c_name
-            match = f'QnxMessageType::Kind::{d.kind.name}'
-            c_def('static', f'QnxMessageType msg_{d.name}', [
-                match, str(d.type or 0), str(d.subtype or 0), c(d.name), resolved_reply, len(d.fields), f'msgf_{d.name}'
+        # Messages
+        for m in self.messages:
+            c_def('static', f'Meta::Message {m.name}', [
+                c(m.name), m.type, str(m.subtype is not None).lower(), m.subtype or '0',
+                '&' + m.request.definition.c_def_struct, '&' + m.reply.definition.c_def_struct
             ])
 
-        c_def('static', 'QnxMessageType all_msg[]', [
-            d.c_name for d in self.defs
-        ])
+        c_def('static', 'Meta::Message *all_msg[]', ['&' + m.name for m in self.messages])
 
-        c_def('', f'QnxMessageList list', [
-            str(len(self.defs)), 'all_msg'
+        c_def('', f'Meta::MessageList list', [
+            str(len(self.structs)), 'all_msg'
         ])
 
         o.write('}\n')
@@ -188,58 +260,39 @@ class Match:
 
 @dataclass
 class Reply:
-    d: Definition
+    d: Struct
 
 class MetaTransformer(lark.Transformer):
-    def start(self, defs: list[Definition]):
-        meta = MetaInfo(defs)
-        return meta
+    def NUMBER(self, v):
+        return int(v, base=0)
 
-    def mk_def(self, kind, name: str, children):
-        d = Definition(kind, name)
-        d.fields = []
-        for c in children:
-            if isinstance(c, Match):
-                setattr(d, c.k, c.v)
-            elif isinstance(c, Reply):
-                d.reply = c.d
-                d.reply.name = d.name + '_reply'
-            elif isinstance(c, Field):
-                d.fields.append(c)
-        check_duplicate((f.name for f in d.fields), DuplicateField)
-        return d
+    def start(self, defs: list[Struct]):
+        return MetaInfo(*filter_class(defs, Struct, Msg))
+    
+    @v_args(inline=True)
+    def def_msg(self, id, type, subtype, request, reply):
+        return Msg(id, type, subtype, request, reply)
+    
+    @v_args(inline=True)
+    def embedded_struct_body(self, struct):
+        struct.inline = True
+        return TypeRef(None, struct)
+    
+    @v_args(inline=True)
+    def type_ref(self, ref):
+        return TypeRef(str(ref))
+    
+    @v_args(inline=True)
+    def def_struct(self, name, struct):
+        struct.name = str(name)
+        return struct
 
-    @v_args(inline=True)
-    def def_(self, kind, name: str, children):
-        return self.mk_def(kind, name, children)
-    
-    @v_args(inline=True)
-    def reply(self, children):
-        return Reply(self.mk_def(DefinitionKind.REPLY, None, children))
-    
-    @v_args(inline=True)   
-    def kind_struct(self, items):
-        print(items)
-        return DefinitionKind.STRUCT
-    
-    @v_args(inline=True)
-    def kind_msg(self):
-        return DefinitionKind.MSG
-    
-    def fields(self, fields):
-        return fields
-    
-    @v_args(inline=True)
-    def match_type(self, number):
-        return Match('type', number)
-    
-    @v_args(inline=True)
-    def match_subtype(self, number):
-        return Match('subtype', number)
+    def struct_body(self, fields):
+        return Struct(fields=fields)
     
     @v_args(inline=True)
     def field(self, name, type, presentation):
-        return Field(str(name), str(type), presentation=presentation or 'DEFAULT')
+        return Field(str(name), type, presentation=presentation or 'DEFAULT')
     
     def p_hex(self, _):
         return 'HEX'

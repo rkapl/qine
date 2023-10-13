@@ -3,6 +3,7 @@
 #include "../compiler.h"
 
 #include "types.h"
+#include "../types.h"
 #include <gen_msg/proc.h>
 #include <cstdint>
 
@@ -44,7 +45,7 @@ struct Magic {
   */
     GuestPtr                sptrs[1];  /* offset 40 (0x28) */
     GuestPtr                    sigtab;    /* signal table */
-    GuestPtr                    cmd;               /* pointer to command */
+    GuestPtr                    cmd;               /* pointer to spawn structure */
     GuestPtr                    cwd;
     GuestPtr                    root_prefix;
     GuestPtr                    termst;
@@ -59,7 +60,7 @@ struct Magic {
      * down.
      */
     struct Qnx::mxfer_entry      xmsg;
-    struct QnxMsg::proc::terminate   msg;
+    struct QnxMsg::proc::terminate_request   msg;
     /*
      * this is either the emulator save area, or the 80x87 save area,
      * depending upon which you are running.

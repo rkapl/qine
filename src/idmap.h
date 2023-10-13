@@ -3,6 +3,9 @@
 #include <new>
 #include <vector>
 
+class OutOfFd: public std::bad_alloc {    
+};
+
 /* For FDs, PIDs, selectors etc. 
 * T must have default value usable for empty slots and be default-insertable. */
 template <class T>
@@ -12,6 +15,7 @@ public:
 
     T* alloc();
     T* alloc_at(size_t i);
+    T* alloc_starting_at(size_t i);
     T* get(size_t i);
     size_t index_of(T* element);
 private:
@@ -28,21 +32,27 @@ IdMap<T>::IdMap(size_t max): m_max(max) {
 
 template <class T>
 T* IdMap<T>::alloc() {
-    for (size_t i = 0; i < m_max; i++) {
-        if (m_free[i]) {
-            m_free[i] = false;
-            return &m_data[i];
-        }
-    }
-    throw std::bad_alloc();
+    return alloc_starting_at(0);
 }
 
 template <class T>
 T* IdMap<T>::alloc_at(size_t i){
     if (!m_free[i])
-        throw std::bad_alloc();
+        throw OutOfFd();
     m_free[i] = false;
     return &m_data[i];
+}
+
+template <class T>
+T* IdMap<T>::alloc_starting_at(size_t from)
+{
+    for (size_t i = from; i < m_max; i++) {
+        if (m_free[i]) {
+            m_free[i] = false;
+            return &m_data[i];
+        }
+    }
+    throw OutOfFd();
 }
 
 template <class T>

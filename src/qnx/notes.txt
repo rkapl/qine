@@ -1,4 +1,3 @@
-
 # Magic
 
 Is sort of QNXs TLS I guess. Its position is up to the loader/kernel/proc, but there
@@ -32,3 +31,26 @@ The registers have following meaning on loader <-> slib and slib <-> program int
 EBX = curbrk (end of sbrk memory)
 ECX = free memory after curbrk (basically data segmen end - curbrk)
 EDX = stack low
+
+# Calling conventions
+
+Most of things use watcall.
+Quick watcall register callin convention info: All registers are preserved, except return (EAX).
+
+Arguments are placed in EAX, EDX, EBX, ECX (order in the linked source is probably wrong) and then stack.
+Caller cleans up the stack.
+
+But beware. If the function is variadic, like `open(const char* path, ...)` it will use watcom stack 
+based calling convention. This convention seems +- identical to cdecl.
+
+Source: http://jdebp.info/FGA/function-calling-conventions.html
+
+# Open
+
+Neutrino description probably applies:
+https://www.qnx.com/developers/docs/6.3.2/neutrino/prog/resmgr.html
+
+1) query proc, get the relative name
+2) allocate FD
+3) contact iomgr
+

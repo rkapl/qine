@@ -1,9 +1,11 @@
 msg read {
-   @type: 0x103;
-   fd: u16;
-   nbytes: u16;
-   zero: u16; 
+   type: 0x103;
 
+   request {
+        fd: u16;
+        nbytes: u16;
+        zero: u16; 
+   }
    reply {
         status: u16;
         nbytes: u16 hex;
@@ -12,11 +14,13 @@ msg read {
 }
 
 msg write {
-   @type: 0x104;
-   fd: u16;
-   nbytes: u16;
-   zero: u16; 
+   type: 0x104;
 
+   request {
+        fd: u16;
+        nbytes: u16;
+        zero: u16; 
+   }
    reply {
         status: u16;
         nbytes: u16 hex;
@@ -25,12 +29,14 @@ msg write {
 }
 
 msg lseek {
-    @type: 0x105;
-    fd: u16;
-    offset: u16;
-    whence: u16;
-    zero: u16;
+    type: 0x105;
 
+    request {
+        fd: u16;
+        offset: u16;
+        whence: u16;
+        zero: u16;
+    }
     reply {
         status: u16;
         zero: u16;

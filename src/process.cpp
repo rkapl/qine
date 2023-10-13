@@ -1,12 +1,24 @@
+#include <asm-generic/errno-base.h>
+#include <asm-generic/errno.h>
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <stdexcept>
+#include <string>
 #include <sys/ucontext.h>
+
+#include "msg/meta.h"
+#include "msg/dump.h"
+#include "qnx/magic.h"
+#include "qnx/msg.h"
+#include "qnx/procenv.h"
+#include "qnx/types.h"
+
 #include "mem_ops.h"
 #include "process.h"
 #include "emu.h"
-#include "qnx/magic.h"
-#include "qnx/procenv.h"
+#include "msg_handler.h"
 #include "segment.h"
 #include "segment_descriptor.h"
 #include "context.h"
@@ -15,7 +27,9 @@
 Process* Process::m_current = nullptr;
 
 Process::Process(): 
-    m_segment_descriptors(1024), m_magic_guest_pointer(FarPointer::null())
+    m_segment_descriptors(1024),
+    m_fds(1024),
+    m_magic_guest_pointer(FarPointer::null())
 {
 }
 
@@ -32,12 +46,17 @@ void Process::initialize() {
 
 Qnx::pid_t Process::pid()
 {
-    return 2;
+    return 0x1001;
 }
 
 Qnx::pid_t Process::parent_pid()
 {
-    return 1;
+    return 0x1002;
+}
+
+Qnx::pid_t Process::nid()
+{
+    return 0x1002;
 }
 
 void Process::enter_emu()
@@ -94,7 +113,6 @@ void Process::setup_magic(SegmentDescriptor *data_sd, SegmentAllocator& alloc)
     alloc.alloc(sizeof(Qnx::Magic));
     m_magic_guest_pointer = data_sd->pointer(alloc.offset());
     m_magic = reinterpret_cast<Qnx::Magic*>(alloc.ptr());
-    memset(m_magic, 0xCC, sizeof(*m_magic));
     
     /* Now create the magical segment that will be pointing to magic */
     m_magic_pointer = allocate_segment();
@@ -109,6 +127,51 @@ void Process::setup_magic(SegmentDescriptor *data_sd, SegmentAllocator& alloc)
      */
     create_segment_descriptor_at(Access::READ_ONLY, m_magic_pointer, SegmentDescriptor::sel_to_id(Qnx::MAGIC_PTR_SELECTOR));
 
+    for (size_t i = 0; i < sizeof(*m_magic) / 4; i++) {
+        // this helps us identify the values we filled out wront down the line
+        *(reinterpret_cast<uint32_t*>(m_magic) + i) = 0xDEADBE00 + i;
+    }
+
+    m_magic->my_pid = pid();
+    m_magic->dads_pid = parent_pid();
+    m_magic->my_nid = nid();
+
+}
+
+void Process::handle_msg(MsgInfo& m)
+{
+    auto& msg = m.msg();
+    Qnx::MsgHeader hdr;
+    msg.read_type(&hdr);
+
+    #if 1
+    msg.dump_send(stdout);
+    uint8_t msg_class = hdr.type >> 8;
+    switch (msg_class) {
+        case 0: 
+            Meta::dump_message(stdout, QnxMsg::proc::list, msg);
+            break;
+        case 1: 
+            Meta::dump_message(stdout, QnxMsg::io::list, msg);
+            break;
+    }
+    #endif
+
+    // TODO: allow dispatching to individual handler
+    m_main_handler.receive(m);
+}
+
+static std::string cpp_getcwd() {
+    std::string s;
+    s.resize(Qnx::PATH_MAX);
+    if (getcwd(s.data(), s.length()) != NULL) {
+        return s;
+    } else {
+        if (errno == ERANGE || errno == ENAMETOOLONG) {
+            throw CwdTooLong();
+        }
+        throw std::logic_error("getcwd failed");
+    }
 }
 
 void Process::setup_startup_context(int argc, char **argv)
@@ -137,7 +200,12 @@ void Process::setup_startup_context(int argc, char **argv)
 
     /* Environment */
     ctx.push_stack(0);
-    alloc.push_string("PATH=/bin");
+    std::string cwd_env("__CWD=");
+    cwd_env.append(cpp_getcwd());
+    alloc.push_string(cwd_env.c_str());
+
+    ctx.push_stack(alloc.offset());
+    alloc.push_string("__PFX=//0");
     ctx.push_stack(alloc.offset());
 
     /* Argv */
