@@ -5,7 +5,7 @@
 class Msg;
 
 namespace Meta {
-    void dump_message(FILE* s, const MessageList& list,  Msg& msg);
+    const Message * find_message(FILE *s, const MessageList &list, Msg &msg);
     void dump_structure(FILE* s, int indent, const Struct &str, Msg& msg);
 }
 

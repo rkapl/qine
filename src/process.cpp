@@ -3,11 +3,14 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <stdexcept>
 #include <string>
 #include <sys/ucontext.h>
 
+#include "gen_msg/io.h"
+#include "gen_msg/proc.h"
 #include "msg/meta.h"
 #include "msg/dump.h"
 #include "qnx/magic.h"
@@ -144,21 +147,42 @@ void Process::handle_msg(MsgInfo& m)
     Qnx::MsgHeader hdr;
     msg.read_type(&hdr);
 
-    #if 1
-    msg.dump_send(stdout);
+    const Meta::MessageList *ml = nullptr;
+    const Meta::Message *mt = nullptr;
+
+    #if 0
+    //msg.dump_send(stdout);
     uint8_t msg_class = hdr.type >> 8;
     switch (msg_class) {
         case 0: 
-            Meta::dump_message(stdout, QnxMsg::proc::list, msg);
+            ml = &QnxMsg::proc::list;
             break;
         case 1: 
-            Meta::dump_message(stdout, QnxMsg::io::list, msg);
+            ml = &QnxMsg::io::list;
             break;
+        default:
+            printf("Msg receiver unknown, cannot dump\n");
+            break;
+    }
+    if (ml)
+        mt = Meta::find_message(stdout, *ml, msg);
+    if (mt) {
+        fprintf(stdout, "request %s {\n", mt->m_name);
+        Meta::dump_structure(stdout, 0, *mt->m_request, msg);
+        fprintf(stdout, "\n");
     }
     #endif
 
     // TODO: allow dispatching to individual handler
     m_main_handler.receive(m);
+
+    #if 1
+    if (mt) {
+        fprintf(stdout, "reply %s {\n", mt->m_name);
+        Meta::dump_structure(stdout, 0, *mt->m_reply, msg);
+        fprintf(stdout, "\n");
+    }
+    #endif 
 }
 
 static std::string cpp_getcwd() {

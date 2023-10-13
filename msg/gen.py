@@ -248,7 +248,7 @@ class MetaInfo:
         c_def('static', 'Meta::Message *all_msg[]', ['&' + m.name for m in self.messages])
 
         c_def('', f'Meta::MessageList list', [
-            str(len(self.structs)), 'all_msg'
+            str(len(self.messages)), 'all_msg'
         ])
 
         o.write('}\n')

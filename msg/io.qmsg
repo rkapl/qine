@@ -1,3 +1,26 @@
+struct open {
+    # sync with proc.qms open
+    type: u16 hex;
+    fd: u16;
+    uint: u16 hex;
+    version_cycle: u8 hex;
+    eflag: u8 hex;
+    nid: nid;
+    pid: pid;
+    sflag: u16 hex;
+    oflag: u16 hex;
+    mode: u16 hex;
+    zero: u32 hex;
+    path: path;
+}
+
+msg io_open {
+     type: 0x0101;
+
+     request open;
+     reply open;
+}
+
 msg read {
    type: 0x103;
 

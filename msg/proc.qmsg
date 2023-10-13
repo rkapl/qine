@@ -38,9 +38,8 @@ msg terminate {
 
 struct open {
     type: u16 hex;
-    subtype: u16 hex;
-
-    fd: u16 hex;
+    fd: u16;
+    uint: u16 hex;
     version_cycle: u8 hex;
     eflag: u8 hex;
     nid: nid;
@@ -53,9 +52,8 @@ struct open {
 }
 
 msg open {
-    # Seems to match _io_open, used also for reply and mayba other commds
+    # Seems to match _io_open, used also for reply and maybe other commds
     type: 25;
-    subtype: 0;
     
     request open;
     reply open;
@@ -84,8 +82,9 @@ struct fd_reply1 {
     padd: u16;
 }
 
-msg fd {
+msg fd_attach {
     type: 22;
+    subtype: 0;
 
     request fd_request;
     reply fd_reply1;

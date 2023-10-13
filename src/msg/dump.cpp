@@ -4,6 +4,7 @@
 #include "qnx/msg.h"
 #include <algorithm>
 #include <bits/types/FILE.h>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -45,13 +46,13 @@ static void print_field(FILE* s, const void *v, const Meta::Field& f) {
     }
 }
 
-void dump_structure(FILE* s, int indent, const Meta::Struct *t, Msg& msg) {
-    std::unique_ptr<uint8_t[]> msg_buf(new uint8_t[t->m_size]);
-    msg.read(msg_buf.get(), 0, t->m_size);
+void Meta::dump_structure(FILE* s, int indent, const Meta::Struct &t, Msg& msg) {
+    std::unique_ptr<uint8_t[]> msg_buf(new uint8_t[t.m_size]);
+    msg.read(msg_buf.get(), 0, t.m_size);
 
     
-    for(size_t fi = 0; fi < t->m_field_count; ++fi) {
-        auto& f = t->m_fields[fi];
+    for(size_t fi = 0; fi < t.m_field_count; ++fi) {
+        auto& f = t.m_fields[fi];
         fprintf(s, "@%02x ", static_cast<uint32_t>(f.m_offset));
         fprintf(s, "   %s: ", f.m_name);
 
@@ -59,12 +60,12 @@ void dump_structure(FILE* s, int indent, const Meta::Struct *t, Msg& msg) {
         print_field(s, field_data, f);
         fprintf(s, "\n");
     }
-    fprintf(s, "}\n");
 }
 
-void Meta::dump_message(FILE* s, const Meta::MessageList& list,  Msg& msg) {
+const Meta::Message* Meta::find_message(FILE *s, const MessageList &list, Msg &msg) {
     Qnx::MsgHeader hdr; 
     msg.read_type(&hdr);
+
     
     auto match_msg = [&hdr] (const Meta::Message* t) -> bool {
         bool type_match = t->m_type == hdr.type;
@@ -76,12 +77,11 @@ void Meta::dump_message(FILE* s, const Meta::MessageList& list,  Msg& msg) {
     auto t_end = &list.messages[list.count_messages];
     auto t = std::find_if(list.messages, t_end, match_msg);
 
+
     if (t == t_end) {
         fprintf(s, "Unknown message (%x: %x)\n", hdr.type, hdr.subtype);
-        return;
+        return nullptr;
     }
 
-    fprintf(s, "message %s {\n", (*t)->m_name);
-    dump_structure(s, 0, (*t)->m_request, msg);
-
+    return *t;
 }

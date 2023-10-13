@@ -1,4 +1,10 @@
+#include <asm-generic/errno-base.h>
+#include <cerrno>
+#include <ios>
+#include <new>
+#include <stdexcept>
 #include <string.h>
+#include <system_error>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/types.h>
@@ -11,7 +17,9 @@
 #include "process.h"
 #include "msg_handler.h"
 #include "main_handler.h"
+#include "qnx/errno.h"
 #include "qnx/msg.h"
+#include "types.h"
 #include <gen_msg/proc.h>
 #include <gen_msg/io.h>
 
@@ -20,12 +28,19 @@ void MainHandler::receive(MsgInfo& i) {
     Qnx::MsgHeader hdr;
     i.msg().read_type(&hdr);
 
+    auto unhandled_msg = [&hdr] {
+        printf("Unhandled message %xh:%xh\n", hdr.type, hdr.subtype);
+    };
+
     switch (hdr.type) {
         case QnxMsg::proc::msg_segment_realloc::TYPE :
             switch (hdr.subtype) {
                 case QnxMsg::proc::msg_segment_realloc::SUBTYPE:
                     proc_segment_realloc(i);
-                    break;
+                break;
+                default:
+                    unhandled_msg();
+                break;
             }
             break;
         case QnxMsg::proc::msg_terminate::TYPE:
@@ -34,7 +49,19 @@ void MainHandler::receive(MsgInfo& i) {
         case QnxMsg::proc::msg_open::TYPE:
             proc_open(i);
             break;
-
+        case QnxMsg::proc::msg_fd_attach::TYPE:
+            switch (hdr.subtype) {
+                case QnxMsg::proc::msg_fd_attach::SUBTYPE:
+                    proc_fd_attach(i);
+                break;
+                default:
+                    unhandled_msg();
+                break;
+            };
+            break;
+        case QnxMsg::io::msg_io_open::TYPE:
+            io_open(i);
+            break;
         case QnxMsg::io::msg_read::TYPE:
             io_read(i);
             break;
@@ -45,7 +72,7 @@ void MainHandler::receive(MsgInfo& i) {
             io_lseek(i);
             break;
         default:
-            printf("Unhandled message dec %d:%d\n", hdr.type, hdr.subtype);
+            unhandled_msg();
             break;
     }
 }
@@ -54,8 +81,40 @@ void MainHandler::proc_terminate(MsgInfo& i)
 {
     QnxMsg::proc::terminate_request msg;
     i.msg().read_type(&msg);
-    Emu::debug_hook();
     exit(msg.m_status);
+}
+
+void MainHandler::proc_fd_attach(MsgInfo& i)
+{
+    /* FD allocation strategy:
+     * We keep 1:1 mapping with Linux FD. That keeps things simple for now. It also allows us to inherit FDs.
+     * We use open(/dev/null) to reserver FD and later replace them with dup3.
+     */
+    QnxMsg::proc::fd_request msg;
+    i.msg().read_type(&msg);
+
+    if (msg.m_fd != 0) {
+        throw Unsupported("FD allocation from arbitrary number not supported");
+    }
+
+    int fd = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) {
+        if (errno == EMFILE){
+            i.msg().write_status(Qnx::QEMFILE);
+            return;
+        } else if (errno == ENFILE) {
+            i.msg().write_status(Qnx::QENFILE);
+            return;
+        } else {
+            throw std::system_error(errno, std::generic_category());
+        }
+    }
+
+    QnxMsg::proc::fd_reply1 reply;
+    memset(&reply, 0, sizeof(reply));
+    reply.m_status = 0;
+    reply.m_fd = fd;
+    i.msg().write_type(0, &reply);
 }
 
 void MainHandler::proc_segment_realloc(MsgInfo& i)
@@ -90,17 +149,33 @@ void MainHandler::proc_segment_realloc(MsgInfo& i)
 void MainHandler::proc_open(MsgInfo& i) {
     QnxMsg::proc::open msg;
     i.msg().read_type(&msg);
-    
-    int mapped_oflags = O_RDONLY;
-    int fd = ::open(msg.m_path, mapped_oflags);
-    msg.m_fd = fd;
+
+    msg.m_type = Qnx::QEOK;
     msg.m_pid = 1;
+    i.msg().write_type(0, &msg);
+}
+
+void MainHandler::io_open(MsgInfo& i) {
+    QnxMsg::proc::open msg;
+    i.msg().read_type(&msg);
+
+    int mapped_oflags = O_RDONLY;    
+    // TODO: handle cloexec and flags
+    int fd = ::open(msg.m_path, mapped_oflags);;
     if (fd < 0) {
-        msg.m_type = Emu::map_errno(errno);
+        i.msg().write_status(Emu::map_errno(errno));
+        return;
     } else {
         msg.m_type = 0;
     }
 
+    int r = dup2(fd, msg.m_fd);
+    printf("opened %d -> %d\n", fd, msg.m_fd);
+    if (r < 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+        return;
+    }
+    close(fd);
     i.msg().write_type(0, &msg);
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <stdexcept>
 #include <stdint.h>
 
 using SegmentId = uint16_t;
@@ -8,6 +9,11 @@ template <class T>
 using GuestPtrTo = uint32_t;
 
 using GuestPtr = GuestPtrTo<void>;
+
+class Unsupported: public std::runtime_error {
+public:
+    Unsupported(const char *what): std::runtime_error(what) {}
+};
 
 enum class RwOp {
     READ = 0,
