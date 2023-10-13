@@ -6,12 +6,12 @@
 class Context;
 
 
-/* All information about the message that was send*/
+/* All information about the message that was sent by the process*/
 struct MsgInfo {
     friend class Emu;
 public:
-    Msg& msg() const {return *m_msg;}
-    Context& ctx() const {return *m_ctx;}
+    Msg& msg() {return *m_msg;}
+    Context& ctx() {return *m_ctx;}
 
     bool m_via_fd;
     /* fd or pid*/

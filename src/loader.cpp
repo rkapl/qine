@@ -18,6 +18,7 @@
 #include "segment_descriptor.h"
 #include "types.h"
 #include "context.h"
+#include "log.h"
 
 static_assert(sizeof(lmf_header) == 48, "lmf_header size mimsatch");
 static_assert(sizeof(lmf_record) == 6, "lmf_record size mismatch");
@@ -91,7 +92,7 @@ void FlatLoader::alloc_segment(uint32_t id, Access access, uint32_t size)
     seg.size = MemOps::align_page_up(size);
     m_segment_pos += MemOps::align_page_up(size);
 
-    printf("Segment %d: size=%x, type=%x, linear=%x\n", id, size, access, seg.start);
+    Log::print(Log::LOADER, "Segment %d: size=%x, type=%x, linear=%x\n", id, size, access, seg.start);
 }
 
 void FlatLoader::finalize_segments() {
@@ -175,7 +176,7 @@ void SegmentLoader::alloc_segment(uint32_t id, Access access, uint32_t size) {
     seg->grow(Access::READ_WRITE, aligned_size);
     m_segments[id].segment = seg;
     m_segments[id].final_access = access;
-    printf("Segment %d: size=%x, type=%x, linear=%x\n", id, size, access, seg->location());
+    Log::print(Log::LOADER, "Segment %d: size=%x, type=%x, linear=%x\n", id, size, access, seg->location());
 }
 
 void SegmentLoader::finalize_segments() {
@@ -233,7 +234,7 @@ static void checked_read(const char* operation, int fd, void *dst, size_t size) 
 // see https://github.com/radareorg/radare2/issues/12664
 
 void load_executable(const char* path, bool slib) {
-    printf("Loading %s\n", path);
+    Log::print(Log::LOADER, "Loading %s\n", path);
     auto fd = UniqueFd(open(path, O_CLOEXEC | O_RDONLY));
     auto proc = Process::current();
 
@@ -313,7 +314,7 @@ void load_executable(const char* path, bool slib) {
             checked_read("loader: read data header", fd.get(), reinterpret_cast<void*>(&ld), sizeof(ld));
             
             uint32_t data_size = rec.data_nbytes - sizeof(ld);
-            printf("load data: segment=0x%x, offset=0x%x, size=0x%x\n", ld.segment, ld.offset, data_size);
+            Log::print(Log::LOADER, "load data: segment=0x%x, offset=0x%x, size=0x%x\n", ld.segment, ld.offset, data_size);
 
             void *dst = loader->get_load_addr(ld, data_size);
             checked_read("loader: load data", fd.get(), dst, data_size);

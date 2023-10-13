@@ -1,5 +1,6 @@
 #include <asm-generic/errno-base.h>
 #include <asm-generic/errno.h>
+#include <bits/types/FILE.h>
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
@@ -26,6 +27,7 @@
 #include "segment_descriptor.h"
 #include "context.h"
 #include "types.h"
+#include "log.h"
 
 Process* Process::m_current = nullptr;
 
@@ -147,42 +149,56 @@ void Process::handle_msg(MsgInfo& m)
     Qnx::MsgHeader hdr;
     msg.read_type(&hdr);
 
-    const Meta::MessageList *ml = nullptr;
-    const Meta::Message *mt = nullptr;
+    // most of this functio is loggin
+    bool msg_searched = false;
+    const Meta::Message *msg_type = nullptr;
 
-    #if 0
-    //msg.dump_send(stdout);
-    uint8_t msg_class = hdr.type >> 8;
-    switch (msg_class) {
-        case 0: 
-            ml = &QnxMsg::proc::list;
-            break;
-        case 1: 
-            ml = &QnxMsg::io::list;
-            break;
-        default:
-            printf("Msg receiver unknown, cannot dump\n");
-            break;
-    }
-    if (ml)
-        mt = Meta::find_message(stdout, *ml, msg);
-    if (mt) {
-        fprintf(stdout, "request %s {\n", mt->m_name);
-        Meta::dump_structure(stdout, 0, *mt->m_request, msg);
-        fprintf(stdout, "\n");
-    }
-    #endif
+    auto find_msg = [hdr, &msg, &msg_type, &msg_searched] {
+        if (msg_searched) {
+            return;
+        }
 
+        const Meta::MessageList *ml = nullptr;
+        msg_searched = true;
+        uint8_t msg_class = hdr.type >> 8;
+        switch (msg_class) {
+            case 0: 
+                ml = &QnxMsg::proc::list;
+                break;
+            case 1: 
+                ml = &QnxMsg::io::list;
+                break;
+            default:
+                printf("Msg receiver unknown, cannot dump\n");
+                break;
+        }
+        if (ml)
+            msg_type = Meta::find_message(stdout, *ml, msg);
+    };
+
+    Log::if_enabled(Log::MSG, [&](FILE *s) {
+        find_msg();
+        if (msg_type) {
+            fprintf(stdout, "reply %s {\n", msg_type->m_name);
+            Meta::dump_structure(s, 0, *msg_type->m_reply, msg);
+            fprintf(stdout, "\n");
+        } else {
+            msg.dump_send(s);
+        }
+    });
+
+    // meat of the function
     // TODO: allow dispatching to individual handler
     m_main_handler.receive(m);
 
-    #if 1
-    if (mt) {
-        fprintf(stdout, "reply %s {\n", mt->m_name);
-        Meta::dump_structure(stdout, 0, *mt->m_reply, msg);
-        fprintf(stdout, "\n");
-    }
-    #endif 
+    Log::if_enabled(Log::MSG_REPLY, [&](FILE *s) {
+        find_msg();
+        if (msg_type) {
+            fprintf(stdout, "reply %s {\n", msg_type->m_name);
+            Meta::dump_structure(s, 0, *msg_type->m_reply, msg);
+            fprintf(stdout, "\n");
+        }
+    });
 }
 
 static std::string cpp_getcwd() {
@@ -251,8 +267,8 @@ void Process::setup_startup_context(int argc, char **argv)
     ctx.reg_cs() = slib_entry.m_segment;
     ctx.reg_eip() = slib_entry.m_offset;
 
-    printf("Real start: %x:%x\n", slib_entry.m_segment, slib_entry.m_offset);
-    printf("Program start: %x:%x\n", main_entry.m_segment, main_entry.m_offset);
+    Log::print(Log::LOADER, "Real start: %x:%x\n", slib_entry.m_segment, slib_entry.m_offset);
+    Log::print(Log::LOADER, "Program start: %x:%x\n", main_entry.m_segment, main_entry.m_offset);
 
     data_sd->update_descriptors();
 

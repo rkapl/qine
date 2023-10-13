@@ -20,6 +20,7 @@
 #include "qnx/errno.h"
 #include "qnx/msg.h"
 #include "types.h"
+#include "log.h"
 #include <gen_msg/proc.h>
 #include <gen_msg/io.h>
 
@@ -29,7 +30,7 @@ void MainHandler::receive(MsgInfo& i) {
     i.msg().read_type(&hdr);
 
     auto unhandled_msg = [&hdr] {
-        printf("Unhandled message %xh:%xh\n", hdr.type, hdr.subtype);
+        Log::print(Log::UNHANDLED, "Unhandled message %xh:%xh\n", hdr.type, hdr.subtype);
     };
 
     switch (hdr.type) {
@@ -170,7 +171,7 @@ void MainHandler::io_open(MsgInfo& i) {
     }
 
     int r = dup2(fd, msg.m_fd);
-    printf("opened %d -> %d\n", fd, msg.m_fd);
+    
     if (r < 0) {
         i.msg().write_status(Emu::map_errno(errno));
         return;

@@ -5,6 +5,7 @@
 
 #include "emu.h"
 #include "gen_msg/io.h"
+#include "log.h"
 #include "mem_ops.h"
 #include "msg/meta.h"
 #include "msg_handler.h"
@@ -172,7 +173,7 @@ void Emu::static_handler_user(int sig, siginfo_t *info, void *uctx)
     #undef SYNC
 
     ectx.to_cpu();
-    printf("Entering emulation\n");
+    Log::print(Log::MAIN, "Entering emulation\n");
 }
 
 void Emu::enter_emu() {

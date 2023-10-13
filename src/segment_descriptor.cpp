@@ -4,6 +4,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include "log.h"
 #include "mem_ops.h"
 #include "segment_descriptor.h"
 #include "segment.h"
@@ -12,7 +13,7 @@ SegmentDescriptor::SegmentDescriptor(SegmentId id, Access access, const std::sha
     :m_id(id), m_access(access), m_seg(seg) 
 {
     update_descriptors();
-    printf("LDT %d: %x (access %d)\n", id, m_seg->location(), m_access);
+    Log::print(Log::LOADER, "LDT %d: %x (access %d)\n", id, m_seg->location(), m_access);
 }
 
 void SegmentDescriptor::update_descriptors() {
