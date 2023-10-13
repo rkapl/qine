@@ -60,6 +60,10 @@ class Struct(Type):
     @property
     def c_def_fields(self):
         return f'struct_fields_{self.name}'
+    
+    @property
+    def c_type(self):
+        return self.name
 
 @dataclass
 class Field:
@@ -79,9 +83,14 @@ primitive_types = [
     Primitive('u8', 'uint8_t', 1),
     Primitive('u16', 'uint16_t', 2),
     Primitive('u32', 'uint32_t', 4),
+    Primitive('i8', 'int8_t', 1),
+    Primitive('i16', 'int16_t', 2),
+    Primitive('i32', 'int32_t', 4),
+    Primitive('fd', 'int16_t', 2),
     Primitive('pid', 'uint16_t', 2),
     Primitive('nid', 'uint32_t', 4),
     Primitive('path', 'Qnx::PathBuf', 256),
+    Primitive('term_cc', 'Qnx::TermCc', 40*2),
 ]
 
 primitive_type_map = {t.name: t for t in primitive_types}
@@ -229,7 +238,7 @@ class MetaInfo:
                       head + ['F::' + fd.name.upper(), 'P::' + f.presentation])
                 elif isinstance(fd, Struct):
                     c_def('static', f'Meta::Field {f.c_name}',
-                      head + ['F::SUB', 'P::DEFAULT', fd.c_def_struct])
+                      head + ['F::SUB', 'P::DEFAULT', '&' + fd.c_def_struct])
                 
             c_def('static', f'Meta::Field {s.c_def_fields}[]', [f.c_name for f in s.fields])
 

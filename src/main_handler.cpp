@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "gen_msg/dev.h"
 #include "mem_ops.h"
 #include "process.h"
 #include "msg_handler.h"
@@ -55,6 +56,9 @@ void MainHandler::receive(MsgInfo& i) {
                 case QnxMsg::proc::msg_fd_attach::SUBTYPE:
                     proc_fd_attach(i);
                 break;
+                case QnxMsg::proc::msg_fd_detach::SUBTYPE:
+                    proc_fd_detach(i);
+                break;
                 default:
                     unhandled_msg();
                 break;
@@ -62,6 +66,9 @@ void MainHandler::receive(MsgInfo& i) {
             break;
         case QnxMsg::io::msg_io_open::TYPE:
             io_open(i);
+            break;
+        case QnxMsg::io::msg_io_close::TYPE:
+            io_close(i);
             break;
         case QnxMsg::io::msg_read::TYPE:
             io_read(i);
@@ -72,6 +79,11 @@ void MainHandler::receive(MsgInfo& i) {
         case QnxMsg::io::msg_lseek::TYPE:
             io_lseek(i);
             break;
+
+        case QnxMsg::dev::msg_tcgetattr::TYPE:
+            dev_tcgetattr(i);
+            break;
+
         default:
             unhandled_msg();
             break;
@@ -116,6 +128,19 @@ void MainHandler::proc_fd_attach(MsgInfo& i)
     reply.m_status = 0;
     reply.m_fd = fd;
     i.msg().write_type(0, &reply);
+}
+
+void MainHandler::proc_fd_detach(MsgInfo& i) {
+    /* QNX first closes the FD with iomgr, then detaches it. We ignore the close, instead close on detach */
+    QnxMsg::proc::fd_request fd;
+    i.msg().read_type(&fd);
+
+    int r = close(fd.m_fd);
+    if (r < 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+    } else {
+        i.msg().write_status(0);
+    }
 }
 
 void MainHandler::proc_segment_realloc(MsgInfo& i)
@@ -180,6 +205,10 @@ void MainHandler::io_open(MsgInfo& i) {
     i.msg().write_type(0, &msg);
 }
 
+void MainHandler::io_close(MsgInfo& i) {
+    // wait for detach
+}
+
 void MainHandler::io_lseek(MsgInfo &i) {
     QnxMsg::io::lseek_request msg;
     i.msg().read_type(&msg);
@@ -231,4 +260,11 @@ void MainHandler::io_write(MsgInfo &i) {
         reply.m_nbytes = r;
     }
     i.msg().write_type(0, &reply);
+}
+
+void MainHandler::dev_tcgetattr(MsgInfo &i) {
+    QnxMsg::dev::tcgetattr_request msg;
+    i.msg().read_type(&msg);
+
+    i.msg().write_status(Qnx::QENOTTY);
 }

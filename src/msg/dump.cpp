@@ -22,12 +22,15 @@ static void print_int(FILE *s, const Meta::Field& f, uint32_t v) {
 static void print_field(FILE* s, const void *v, const Meta::Field& f) {
     switch (f.m_format) {
         case Meta::Field::Format::U8:
+        case Meta::Field::Format::I8:
             print_int(s, f, *static_cast<const uint8_t*>(v));
             break;
         case Meta::Field::Format::U16:
+        case Meta::Field::Format::I16:
             print_int(s, f, *static_cast<const uint16_t*>(v));
             break;
         case Meta::Field::Format::U32:
+        case Meta::Field::Format::I32:
             print_int(s, f, *static_cast<const uint32_t*>(v));
             break;
         case Meta::Field::Format::PID:
@@ -35,6 +38,9 @@ static void print_field(FILE* s, const void *v, const Meta::Field& f) {
             break;
         case Meta::Field::Format::NID:
             fprintf(s, "nid %d", *static_cast<const uint32_t*>(v));
+            break;
+        case Meta::Field::Format::FD:
+            fprintf(s, "fd %d", *static_cast<const int16_t*>(v));
             break;
         case Meta::Field::Format::PATH: {
             std::string str;

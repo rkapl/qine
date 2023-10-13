@@ -38,7 +38,7 @@ msg terminate {
 
 struct open {
     type: u16 hex;
-    fd: u16;
+    fd: fd;
     uint: u16 hex;
     version_cycle: u8 hex;
     eflag: u8 hex;
@@ -62,7 +62,7 @@ msg open {
 struct fd_request {
     type: u16 hex;
     subtype: u16 hex;
-    fd: u16;
+    fd: fd;
     owner_pid: pid;
     zero1: u16;
     nid: nid;
@@ -77,7 +77,7 @@ struct fd_request {
 
 struct fd_reply1 {
     status: u16;
-    fd: u16;
+    fd: fd;
     padd: u16;
     padd: u16;
 }
@@ -85,6 +85,14 @@ struct fd_reply1 {
 msg fd_attach {
     type: 22;
     subtype: 0;
+
+    request fd_request;
+    reply fd_reply1;
+}
+
+msg fd_detach {
+    type: 22;
+    subtype: 1;
 
     request fd_request;
     reply fd_reply1;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #pragma  once
 #include <stdint.h>
 #include <stddef.h>
@@ -8,6 +9,7 @@
 
 namespace Qnx {
     using PathBuf = char[256];
+    using TermCc = uint16_t[40];
 }
 
 namespace Meta {
@@ -24,7 +26,7 @@ namespace Meta {
 
     struct Field {
         enum class Format {
-            SUB, U8, U16, U32, PID, NID, PATH
+            SUB, U8, U16, U32, I8, I16, I32,  PID, NID, FD, PATH, TERM_CC
         };
         enum class Presentation {
             DEFAULT, HEX

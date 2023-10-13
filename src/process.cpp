@@ -10,6 +10,7 @@
 #include <string>
 #include <sys/ucontext.h>
 
+#include "gen_msg/dev.h"
 #include "gen_msg/io.h"
 #include "gen_msg/proc.h"
 #include "msg/meta.h"
@@ -168,6 +169,9 @@ void Process::handle_msg(MsgInfo& m)
             case 1: 
                 ml = &QnxMsg::io::list;
                 break;
+            case 3:
+                ml = &QnxMsg::dev::list;
+                break;
             default:
                 printf("Msg receiver unknown, cannot dump\n");
                 break;
@@ -179,9 +183,9 @@ void Process::handle_msg(MsgInfo& m)
     Log::if_enabled(Log::MSG, [&](FILE *s) {
         find_msg();
         if (msg_type) {
-            fprintf(stdout, "reply %s {\n", msg_type->m_name);
-            Meta::dump_structure(s, 0, *msg_type->m_reply, msg);
-            fprintf(stdout, "\n");
+            fprintf(stdout, "request %s {\n", msg_type->m_name);
+            Meta::dump_structure(s, 0, *msg_type->m_request, msg);
+            fprintf(stdout, "}\n");
         } else {
             msg.dump_send(s);
         }

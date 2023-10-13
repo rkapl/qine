@@ -1,7 +1,7 @@
 struct open {
     # sync with proc.qms open
     type: u16 hex;
-    fd: u16;
+    fd: fd;
     uint: u16 hex;
     version_cycle: u8 hex;
     eflag: u8 hex;
@@ -15,17 +15,30 @@ struct open {
 }
 
 msg io_open {
-     type: 0x0101;
+     type: 0x101;
 
      request open;
      reply open;
+}
+
+msg io_close {
+     type: 0x102;
+
+     request {
+          fd: fd;
+          padd: u32;
+     }
+
+     reply {
+          status: u16;
+     }
 }
 
 msg read {
    type: 0x103;
 
    request {
-        fd: u16;
+        fd: fd;
         nbytes: u16;
         zero: u16; 
    }
@@ -40,7 +53,7 @@ msg write {
    type: 0x104;
 
    request {
-        fd: u16;
+        fd: fd;
         nbytes: u16;
         zero: u16; 
    }
@@ -55,7 +68,7 @@ msg lseek {
     type: 0x105;
 
     request {
-        fd: u16;
+        fd: fd;
         offset: u16;
         whence: u16;
         zero: u16;
