@@ -43,7 +43,7 @@ void Emu::init() {
     }
 }
 
-void Emu::static_handler_segv(int sig, siginfo_t *info, void *uctx_void) {
+qine_no_tls void Emu::static_handler_segv(int sig, siginfo_t *info, void *uctx_void) {
     Process::current()->m_emu.handler_segv(sig, info, uctx_void);
 }
 

@@ -258,11 +258,12 @@ void Process::setup_startup_context(int argc, char **argv)
 
     /* Environment */
     ctx.push_stack(0);
+
     std::string cwd_env("__CWD=");
     cwd_env.append(cpp_getcwd());
     alloc.push_string(cwd_env.c_str());
-
     ctx.push_stack(alloc.offset());
+
     alloc.push_string("__PFX=//1");
     ctx.push_stack(alloc.offset());
 
