@@ -16,15 +16,18 @@ private:
     void msg_handle(MsgInfo &i);
 
     void proc_segment_realloc(MsgInfo &i);
+    void proc_segment_alloc(MsgInfo &i);
     void proc_time(MsgInfo &i);
     void proc_open(MsgInfo &i);
     void proc_terminate(MsgInfo &i);
     void proc_fd_attach(MsgInfo &i);
     void proc_fd_detach(MsgInfo &i);
     void proc_vc_detach(MsgInfo &i);
+    void proc_psinfo(MsgInfo &i);
 
     void io_open(MsgInfo &i);
     void io_stat(MsgInfo &i);
+    void io_fstat(MsgInfo &i);
     void io_close(MsgInfo &i);
     void io_read(MsgInfo &i);
     void io_write(MsgInfo &i);

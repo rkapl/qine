@@ -5,10 +5,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 #include <string>
 #include <sys/ucontext.h>
+#include <system_error>
 
 #include "gen_msg/dev.h"
 #include "gen_msg/fsys.h"
@@ -51,19 +53,23 @@ void Process::initialize() {
     m_current->m_emu.init();
 }
 
-Qnx::pid_t Process::pid()
+Qnx::pid_t Process::pid() const
 {
     return 0x1001;
 }
 
-Qnx::pid_t Process::parent_pid()
+Qnx::pid_t Process::parent_pid() const
 {
     return 0x1002;
 }
 
-Qnx::pid_t Process::nid()
+Qnx::pid_t Process::nid() const
 {
     return 0x1;
+}
+
+const std::string& Process::file_name() const {
+    return m_file_name;
 }
 
 void Process::enter_emu()
@@ -261,6 +267,12 @@ void Process::setup_startup_context(int argc, char **argv)
     ctx.push_stack(alloc.offset());
 
     /* Argv */
+    m_file_name.resize(Qnx::PATH_MAX);
+    if (!realpath(argv[0], m_file_name.data())) {
+        throw std::system_error(errno, std::system_category());
+    }
+    m_file_name.resize(strlen(m_file_name.data()));
+
     ctx.push_stack(0);
     for (int i = argc - 1; i >= 0; i--) {
         alloc.push_string(argv[i]);

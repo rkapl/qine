@@ -57,9 +57,10 @@ public:
 
     void handle_msg(MsgInfo& m);
 
-    Qnx::pid_t pid();
-    Qnx::pid_t parent_pid();
-    Qnx::nid_t nid();
+    Qnx::pid_t pid() const;
+    Qnx::pid_t parent_pid() const;
+    Qnx::nid_t nid() const;
+    const std::string& file_name() const;
 
     void set_errno(int v);
 
@@ -93,6 +94,7 @@ private:
     Qnx::Magic* m_magic;
 
     Emu m_emu;
+    std::string m_file_name;
 };
 
 Process* Process::current() {

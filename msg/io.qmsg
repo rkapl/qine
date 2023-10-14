@@ -64,7 +64,7 @@ msg lseek {
 
     request {
         fd: fd;
-        offset: u16;
+        offset: i32;
         whence: u16;
         zero: u16;
     }
@@ -105,6 +105,21 @@ msg stat {
      type: 0x115;
 
      request open;
+     reply {
+          status: u16;
+          padd: u16;
+          stat: stat;
+     }
+}
+
+msg fstat {
+     type: 0x10a;
+
+     request {
+          fd: u16;
+          zero: u32;
+     }
+
      reply {
           status: u16;
           padd: u16;

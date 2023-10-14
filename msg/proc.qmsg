@@ -1,28 +1,42 @@
 include common : open;
 
+struct segment_request {
+    type: u16;
+    subtype: u16;
+
+    sel: u16;
+    srcpid: pid;
+    padd_1: u16;
+    dstpid: pid;
+    padd_2: u16;
+    flags: u16 hex;
+    padd_3: u16;
+    addr: u32 hex;
+    nbytes: u32 hex;
+}
+
+struct segment_reply {
+    status: u16;
+    sel: u16;
+    flags: u16 hex;
+    addr: u32 hex;
+    nbytes: u32 hex;
+}
+
+msg segment_alloc {
+    type: 9;
+    subtype: 1;
+
+    request segment_request;
+    reply segment_reply;
+}
+
 msg segment_realloc {
     type: 9;
     subtype: 3;
 
-    request {
-        sel: u16;
-        srcpid: pid;
-        padd_1: u16;
-        dstpid: pid;
-        padd_2: u16;
-        flags: u16 hex;
-        padd_3: u16;
-        addr: u32 hex;
-        nbytes: u32 hex;
-    }
-
-    reply {
-        status: u16;
-        sel: u16;
-        flags: u16 hex;
-        addr: u32 hex;
-        nbytes: u32 hex;
-    }
+    request segment_request;
+    reply segment_reply;
 }
 
 msg time {
@@ -104,5 +118,19 @@ msg vc_detach {
     request {}
     reply {
         status: u16;
+    }
+}
+
+msg psinfo {
+    type: 34;
+    request {
+        pid: pid;
+        padd: u16;
+        memindex: u16;
+    }
+    reply {
+        status: u16;
+        # psinfo follows
+        # 16 segs follow
     }
 }

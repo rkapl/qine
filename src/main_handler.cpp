@@ -28,6 +28,7 @@
 #include "qnx/errno.h"
 #include "qnx/io.h"
 #include "qnx/msg.h"
+#include "qnx/psinfo.h"
 #include "types.h"
 #include "log.h"
 #include <gen_msg/proc.h>
@@ -47,6 +48,9 @@ void MainHandler::receive(MsgInfo& i) {
             switch (hdr.subtype) {
                 case QnxMsg::proc::msg_segment_realloc::SUBTYPE:
                     proc_segment_realloc(i);
+                break;
+                case QnxMsg::proc::msg_segment_alloc::SUBTYPE:
+                    proc_segment_alloc(i);
                 break;
                 default:
                     unhandled_msg();
@@ -78,12 +82,18 @@ void MainHandler::receive(MsgInfo& i) {
         case QnxMsg::proc::msg_vc_detach::TYPE:
             proc_vc_detach(i);
             break;
+        case QnxMsg::proc::msg_psinfo::TYPE:
+            proc_psinfo(i);
+            break;
         case QnxMsg::io::msg_handle::TYPE:
         case QnxMsg::io::msg_io_open::TYPE:
             io_open(i);
             break;
         case QnxMsg::io::msg_stat::TYPE:
             io_stat(i);
+            break;
+        case QnxMsg::io::msg_fstat::TYPE:
+            io_fstat(i);
             break;
         case QnxMsg::io::msg_close::TYPE:
             io_close(i);
@@ -188,16 +198,37 @@ void MainHandler::proc_fd_detach(MsgInfo& i) {
     }
 }
 
+void MainHandler::proc_segment_alloc(MsgInfo& i)
+{
+    QnxMsg::proc::segment_request msg;
+    i.msg().read_type(&msg);
+    
+    auto seg  = i.ctx().proc()->allocate_segment();
+    seg->reserve(MemOps::mega(1));
+    seg->grow(Access::READ_WRITE, MemOps::align_page_up(msg.m_nbytes));
+
+    auto sd = i.ctx().proc()->create_segment_descriptor(Access::READ_WRITE, seg);
+    
+    QnxMsg::proc::segment_reply reply;
+    memset(&reply, 0, sizeof(reply));
+    reply.m_status = Qnx::QEOK;
+    reply.m_sel = sd->selector();
+    reply.m_nbytes = seg->size();
+    reply.m_addr = reinterpret_cast<uint32_t>(seg->location()); 
+
+    i.msg().write_type(0, &reply);
+}
+
 void MainHandler::proc_segment_realloc(MsgInfo& i)
 {
-    QnxMsg::proc::segment_realloc_request msg;
+    QnxMsg::proc::segment_request msg;
     i.msg().read_type(&msg);
     // TODO: handle invalid segments
     auto sd  = i.ctx().proc()->descriptor_by_selector(msg.m_sel);
     auto seg = sd->segment();
     GuestPtr base = seg->paged_size();
 
-    QnxMsg::proc::segment_realloc_reply reply;
+    QnxMsg::proc::segment_reply reply;
     memset(&reply, 0, sizeof(reply));
     if (seg->is_shared()) {
         reply.m_status = Qnx::QEBUSY;
@@ -232,6 +263,23 @@ void MainHandler::proc_vc_detach(MsgInfo& i)
     /* This is stubbed, because QNX/slib seems to have a bug where the stat result
      * overwrites the NID in the message and it then mistakenly calls vc_detach.*/
     i.msg().write_status(Qnx::QEOK);
+}
+
+void MainHandler::proc_psinfo(MsgInfo &i)
+{
+    auto proc = Process::current();
+    // known user: wlink tries to find its own exec (via _cmdname   )
+    i.msg().write_status(Qnx::QEOK);
+    Qnx::psinfo ps;
+    memset(&ps, 0, sizeof(ps));
+    ps.pid = proc->pid();
+    ps.egid = getgid();
+    ps.euid = getuid();
+    ps.proc.father = proc->parent_pid();
+
+    strlcpy(ps.proc.name, proc->file_name().c_str(), sizeof(ps.proc.name));
+    
+    i.msg().write_type(2, &ps);
 }
 
 void MainHandler::io_open(MsgInfo& i) {
@@ -301,6 +349,24 @@ void MainHandler::io_stat(MsgInfo& i) {
     i.msg().write_type(0, &reply);
 }
 
+void MainHandler::io_fstat(MsgInfo& i) {
+    QnxMsg::io::fstat_request msg;
+    i.msg().read_type(&msg);
+    struct stat sb;
+
+    QnxMsg::io::fstat_reply reply;
+    memset(&reply, 0, sizeof(reply));
+    int r = fstat(msg.m_fd, &sb);
+    if (r < 0) {
+        reply.m_status = Emu::map_errno(errno);
+        i.msg().write_type(0, &reply);
+        return;
+    }
+
+    transfer_stat(reply.m_stat, sb);
+    i.msg().write_type(0, &reply);
+}
+
 void MainHandler::transfer_stat(QnxMsg::io::stat& dst, struct stat& src) {
     dst.m_ino = src.st_ino;
     dst.m_dev = src.st_dev;
@@ -319,18 +385,27 @@ void MainHandler::transfer_stat(QnxMsg::io::stat& dst, struct stat& src) {
 
 void MainHandler::io_close(MsgInfo& i) {
     // wait for detach
+    i.msg().write_status(0);
 }
 
 void MainHandler::io_lseek(MsgInfo &i) {
     QnxMsg::io::lseek_request msg;
     i.msg().read_type(&msg);
 
-    // STUB
-
     QnxMsg::io::lseek_reply reply;
-    reply.m_status = Qnx::QEOK;
-    reply.m_zero = 0;
-    reply.m_offset = 0;
+    memset(&reply, 0, sizeof(reply));
+
+    // TODO: handle overflow
+    off_t off = lseek(msg.m_fd, msg.m_offset, msg.m_whence);
+    if (off == -1) {
+        reply.m_status = Emu::map_errno(off);
+        reply.m_zero = 0;
+        reply.m_offset = -1;
+    } else {
+        reply.m_status = Qnx::QEOK;
+        reply.m_zero = 0;
+        reply.m_offset = off;
+    }
     i.msg().write_type(0, &reply);
 }
 
