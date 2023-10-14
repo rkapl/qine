@@ -19,6 +19,11 @@ args = parser.parse_args()
 grammar = lark.Lark((self_path / 'qmsg.lark').read_text())
 
 @dataclass
+class Include:
+    module: str
+    structs: list[str]
+
+@dataclass
 class TypeRef:
     name: str
     definition: 'Type' = None
@@ -64,6 +69,19 @@ class Struct(Type):
     @property
     def c_type(self):
         return self.name
+    
+@dataclass
+class ExternalStruct(Type):
+    name: str = None
+    module: str = None
+
+    @property
+    def c_def_struct(self):
+        return f'{self.module}::struct_def_{self.name}'
+    
+    @property
+    def c_type(self):
+        return f'{self.module}::{self.name}'
 
 @dataclass
 class Field:
@@ -91,6 +109,7 @@ primitive_types = [
     Primitive('nid', 'uint32_t', 4),
     Primitive('path', 'Qnx::PathBuf', 256),
     Primitive('term_cc', 'Qnx::TermCc', 40*2),
+    Primitive('time', 'Qnx::Time', 40*2),
 ]
 
 primitive_type_map = {t.name: t for t in primitive_types}
@@ -117,14 +136,17 @@ def filter_class(items, *classes):
     return bins
 
 class MetaInfo:
+    includes: list[Include]
     structs: list[Struct]
+    ext_structs: list[ExternalStruct]
     messages: list[Msg]
     sruct_map: dict[str, Struct]
 
-    def __init__(self, structs, messages) -> None:
+    def __init__(self, structs, messages, includes) -> None:
         self.structs = structs
         self.messages = messages
-        check_duplicate(d.name for d in self.structs)
+        self.includes = includes
+        self.ext_structs = []
         check_duplicate(d.name for d in self.messages)
 
     def resolve(self, tr: TypeRef):
@@ -146,7 +168,14 @@ class MetaInfo:
             add_inline(msg, msg.request, '_request')
             add_inline(msg, msg.reply, '_reply')
 
-        self.struct_map = {d.name: d for d in self.structs}
+        # add included defs
+        for i in self.includes:
+            for s in i.structs:
+                self.ext_structs.append(ExternalStruct(s, i.module))
+
+        all_structs = self.structs + self.ext_structs
+        check_duplicate(d.name for d in all_structs)
+        self.struct_map = {d.name: d for d in all_structs}
 
         # Resolve everything
         for msg in self.messages:
@@ -154,26 +183,28 @@ class MetaInfo:
             self.resolve(msg.reply)
         
         for s in self.structs:
-            for f in s.fields:
-                self.resolve(f.type)
+            if isinstance(s, Struct):
+                for f in s.fields:
+                    self.resolve(f.type)
 
         # Now handle type and subtype
         for msg in self.messages:
             d = msg.request.definition
-            assert isinstance(d, Struct)
+            assert isinstance(d, (Struct, ExternalStruct))
             fields = ['type']
             if msg.subtype is not None:
                 fields.append('subtype')
 
-            if d.inline:
+            if isinstance(d, Struct) and d.inline:
                 # Add them for inline requests
                 u16 = primitive_type_map['u16'].make_ref()
                 d.fields = [Field(f, u16, in_def=d, presentation='HEX') for f in fields] + d.fields
             else:
-                # Check existence
-                missing = set(fields) - set(f.name for f in d.fields)
-                if len(missing) > 0:
-                    raise Exception(f'Missing fields {missing} on {d.name}  ')
+                if isinstance(d, Struct):
+                    # Check existence, unless external
+                    missing = set(fields) - set(f.name for f in d.fields)
+                    if len(missing) > 0:
+                        raise Exception(f'Missing fields {missing} on {d.name}  ')
 
         # And check the struct fields and resolve padds
         for d in self.structs:
@@ -191,13 +222,20 @@ class MetaInfo:
         o.write('#pragma once\n')
         o.write('#include <msg/meta.h>\n')
 
+        for i in self.includes:
+            o.write(f'#include <gen_msg/{i.module}.h>\n')
+
         o.write(f'namespace QnxMsg::{name} {{\n');
 
         for s in self.structs:
+            if isinstance(s, ExternalStruct):
+                continue
             o.write(f'struct {s.name} {{\n')
             for f in s.fields:
                 o.write(f'   {f.type.definition.c_type} m_{f.name};\n')
             o.write('} qine_attribute_packed;\n')
+
+            o.write(f'extern const Meta::Struct {s.c_def_struct};\n')
 
         for m in self.messages:
             o.write(f'namespace msg_{m.name} {{\n')
@@ -228,22 +266,22 @@ class MetaInfo:
         o.write('using F = Meta::Field::Format;\n')
         o.write('using P = Meta::Field::Presentation;\n');
 
-        # Structures and their fields
+
         for s in self.structs:
             for f in s.fields:
                 fd = f.type.definition
                 head = [c(f.name), f'offsetof({s.name}, m_{f.name})', f'sizeof({fd.c_type})']
                 if isinstance(fd, Primitive):
                     c_def('static', f'Meta::Field {f.c_name}',
-                      head + ['F::' + fd.name.upper(), 'P::' + f.presentation])
+                    head + ['F::' + fd.name.upper(), 'P::' + f.presentation])
                 elif isinstance(fd, Struct):
                     c_def('static', f'Meta::Field {f.c_name}',
-                      head + ['F::SUB', 'P::DEFAULT', '&' + fd.c_def_struct])
+                    head + ['F::SUB', 'P::DEFAULT', '&' + fd.c_def_struct])
                 
             c_def('static', f'Meta::Field {s.c_def_fields}[]', [f.c_name for f in s.fields])
 
-            c_def('static', f'Meta::Struct {s.c_def_struct}', [
-               len(s.fields), s.c_def_fields, f'sizeof({s.name})'
+            c_def('', f'Meta::Struct {s.c_def_struct}', [
+            len(s.fields), s.c_def_fields, f'sizeof({s.name})'
             ])
             o.write('\n')
 
@@ -276,7 +314,7 @@ class MetaTransformer(lark.Transformer):
         return int(v, base=0)
 
     def start(self, defs: list[Struct]):
-        return MetaInfo(*filter_class(defs, Struct, Msg))
+        return MetaInfo(*filter_class(defs, Struct, Msg, Include))
     
     @v_args(inline=True)
     def def_msg(self, id, type, subtype, request, reply):
@@ -305,6 +343,16 @@ class MetaTransformer(lark.Transformer):
     
     def p_hex(self, _):
         return 'HEX'
+    
+    def p_oct(self, _):
+        return 'OCT'
+    
+    def includes(self, values):
+        return [str(v) for v in values]
+    
+    @v_args(inline=True)
+    def include(self, module, structs):
+        return Include(module, structs)
 
 for input in args.inputs:
     ast = grammar.parse(Path(input).read_text())

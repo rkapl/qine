@@ -60,7 +60,7 @@ uint32_t Context::pop_stack() {
     return v;
 }
 
-void Context::dump(FILE *s) {
+void Context::dump(FILE *s, size_t stack) {
     auto cs = reg_cs();
     auto ip = reg_eip();
     try {
@@ -86,8 +86,11 @@ void Context::dump(FILE *s) {
         reg_cs(), reg_ss(), reg_ds(), reg_es(), reg_fs(), reg_gs()
     );
 
+    if (stack == 0)
+        stack = 16;
+
     fprintf(s, "-- stack --\n");
-    for (int i = 0; i < 17; i++) {
+    for (int i = 0; i < stack; i++) {
         auto addr = reg_esp() + i * 4;
         fprintf(s, "%08X: %08X\n", addr, read<uint32_t>(SS, addr));
     }
@@ -102,9 +105,9 @@ void Context::dump(FILE *s) {
     auto cwd = read_string(user_ptr(m->cwd));
     auto root = read_string(user_ptr(m->root_prefix));
     
-    fprintf(s, "cwd=%s, root=%s, pid=%d, ppid=%d\n", 
+    fprintf(s, "cwd=%s, root=%s, pid=%d, ppid=%d, nid=%d\n", 
         cwd.c_str(), root.c_str(),
-        m->my_pid, m->dads_pid
+        m->my_pid, m->dads_pid, m->my_nid
     );
     #endif
 }

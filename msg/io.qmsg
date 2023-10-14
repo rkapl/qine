@@ -1,27 +1,15 @@
-struct open {
-    # sync with proc.qms open
-    type: u16 hex;
-    fd: fd;
-    uint: u16 hex;
-    version_cycle: u8 hex;
-    eflag: u8 hex;
-    nid: nid;
-    pid: pid;
-    sflag: u16 hex;
-    oflag: u16 hex;
-    mode: u16 hex;
-    zero: u32 hex;
-    path: path;
-}
+include common : open;
 
 msg io_open {
      type: 0x101;
 
      request open;
-     reply open;
+     reply {
+          status: u16;
+     }
 }
 
-msg io_close {
+msg close {
      type: 0x102;
 
      request {
@@ -32,6 +20,13 @@ msg io_close {
      reply {
           status: u16;
      }
+}
+
+msg handle {
+     type: 0x109;
+
+     request open;
+     reply open;
 }
 
 msg read {
@@ -78,4 +73,41 @@ msg lseek {
         zero: u16;
         offset: u32;
     }
+}
+
+struct stat {
+     ino: u32;
+     dev: u32;
+     size: i32;
+     rdev: u32;
+
+     # see comments in original header
+     userland_uid: u32;
+     userland_gid: u32;    
+
+     ftime: time;
+     mtime: time;
+     atime: time;
+     ctime: time;
+     padd: u16;
+
+     mode: u16 oct;
+     uid: u16;
+     gid: u16;
+     nlink: u16;
+
+     padd: u32;
+     padd: u8;
+     status: u8;
+}
+
+msg stat {
+     type: 0x115;
+
+     request open;
+     reply {
+          status: u16;
+          padd: u16;
+          stat: stat;
+     }
 }

@@ -31,6 +31,8 @@ public:
     void read(void *dst, size_t offset, size_t size);
     template<class T> void read_type(T *dst, size_t offset = 0);
 
+    void read_written(void *dst, size_t offset, size_t size);
+
     size_t write(size_t offset, const void *src, size_t size);
     template<class T> void write_type(size_t offset, const T* src);
     void write_status(uint16_t status);

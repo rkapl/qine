@@ -8,7 +8,10 @@
 NUMBER: /0x[0-9a-zA-Z]+/ | /[0-9]+/
 ID: /[_a-zA-Z][_a-zA-Z0-9]*/
 
-start: (def_msg | def_struct) *
+start: (def_msg | def_struct | include) *
+
+include: "include" ID ":" includes ";"
+includes: ID+
 
 def_msg: "msg" ID  "{" type [subtype] request reply "}"
 
@@ -28,4 +31,5 @@ def_struct: "struct" ID struct_body
 struct_body: "{" field* "}"
 
 field: ID ":" type_ref [presentation] ";"
-presentation: "hex" -> p_hex
+presentation: "hex" -> p_hex 
+    | "oct" -> p_oct

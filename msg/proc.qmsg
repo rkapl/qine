@@ -1,3 +1,4 @@
+include common : open;
 
 msg segment_realloc {
     type: 9;
@@ -24,6 +25,21 @@ msg segment_realloc {
     }
 }
 
+msg time {
+    type: 14;
+    request {
+        padd: u16;
+        seconds: u32;
+        nsec: u32;
+    }
+    reply {
+        status: u16;
+        padd: u16;
+        seconds: u32;
+        nsec: u32;
+    }
+}
+
 
 msg terminate {
     type: 24;
@@ -34,21 +50,6 @@ msg terminate {
     }
 
     reply {}
-}
-
-struct open {
-    type: u16 hex;
-    fd: fd;
-    uint: u16 hex;
-    version_cycle: u8 hex;
-    eflag: u8 hex;
-    nid: nid;
-    pid: pid;
-    sflag: u16 hex;
-    oflag: u16 hex;
-    mode: u16 hex;
-    zero: u32 hex;
-    path: path;
 }
 
 msg open {
@@ -96,4 +97,12 @@ msg fd_detach {
 
     request fd_request;
     reply fd_reply1;
+}
+
+msg vc_detach {
+    type: 32;
+    request {}
+    reply {
+        status: u16;
+    }
 }

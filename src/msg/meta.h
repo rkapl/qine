@@ -8,8 +8,10 @@
 #include "../compiler.h"
 
 namespace Qnx {
-    using PathBuf = char[256];
+    /* See comment in io_msg.h */
+    using PathBuf = char[256 + 100];
     using TermCc = uint16_t[40];
+    using Time = int32_t;
 }
 
 namespace Meta {
@@ -26,10 +28,10 @@ namespace Meta {
 
     struct Field {
         enum class Format {
-            SUB, U8, U16, U32, I8, I16, I32,  PID, NID, FD, PATH, TERM_CC
+            SUB, U8, U16, U32, I8, I16, I32,  PID, NID, FD, PATH, TERM_CC, TIME
         };
         enum class Presentation {
-            DEFAULT, HEX
+            DEFAULT, HEX, OCT
         };
 
         const char *m_name;

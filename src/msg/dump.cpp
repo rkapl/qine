@@ -11,16 +11,32 @@
 #include <string>
 #include <sys/types.h>
 
+static void print_indent(FILE *s, int indent) {
+    for (int i = 0; i < indent; i++) {
+        fputs("  ", s);
+    }
+}
+
 static void print_int(FILE *s, const Meta::Field& f, uint32_t v) {
     if (f.m_presentation == Meta::Field::Presentation::DEFAULT) {
         fprintf(s, "%d", v);
+    } else if (f.m_presentation == Meta::Field::Presentation::OCT) {
+        fprintf(s, "%oo", v);
     } else {
         fprintf(s, "%Xh", v);
     }
 }
 
-static void print_field(FILE* s, const void *v, const Meta::Field& f) {
+static void print_field(FILE* s, const Meta::Field& f, int indent, size_t offset, const uint8_t *msg_buf) {
+    auto v = static_cast<const void*>(msg_buf + offset);
     switch (f.m_format) {
+        case Meta::Field::Format::SUB:
+            fprintf(s, "{\n");
+            Meta::dump_substructure(s, *f.m_typeref, indent + 1, offset, msg_buf);
+            print_indent(s, indent);
+            fputs("   ", s);
+            fprintf(s, "}\n");
+            break;
         case Meta::Field::Format::U8:
         case Meta::Field::Format::I8:
             print_int(s, f, *static_cast<const uint8_t*>(v));
@@ -52,20 +68,31 @@ static void print_field(FILE* s, const void *v, const Meta::Field& f) {
     }
 }
 
-void Meta::dump_structure(FILE* s, int indent, const Meta::Struct &t, Msg& msg) {
-    std::unique_ptr<uint8_t[]> msg_buf(new uint8_t[t.m_size]);
-    msg.read(msg_buf.get(), 0, t.m_size);
-
-    
+void Meta::dump_substructure(FILE* s, const Struct &t, int indent, size_t offset, const uint8_t* msg_buf)
+{
     for(size_t fi = 0; fi < t.m_field_count; ++fi) {
         auto& f = t.m_fields[fi];
         fprintf(s, "@%02x ", static_cast<uint32_t>(f.m_offset));
-        fprintf(s, "   %s: ", f.m_name);
+        print_indent(s, indent);
+        fprintf(s, "%s: ", f.m_name);
 
-        auto field_data = static_cast<void*>(msg_buf.get() + f.m_offset);
-        print_field(s, field_data, f);
+        print_field(s, f, indent, offset + f.m_offset, msg_buf);
         fprintf(s, "\n");
     }
+}
+
+void Meta::dump_structure(FILE* s, const Meta::Struct &t, Msg& msg) {
+    std::unique_ptr<uint8_t[]> msg_buf(new uint8_t[t.m_size]);
+    msg.read(msg_buf.get(), 0, t.m_size);
+
+    dump_substructure(s, t, 1, 0, msg_buf.get());
+}
+
+void Meta::dump_structure_written(FILE* s, const Meta::Struct &t, Msg& msg) {
+    std::unique_ptr<uint8_t[]> msg_buf(new uint8_t[t.m_size]);
+    msg.read_written(msg_buf.get(), 0, t.m_size);
+
+    dump_substructure(s, t, 1, 0, msg_buf.get());
 }
 
 const Meta::Message* Meta::find_message(FILE *s, const MessageList &list, Msg &msg) {

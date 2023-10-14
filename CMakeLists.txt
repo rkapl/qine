@@ -5,7 +5,7 @@ project(
   VERSION 0.1
   LANGUAGES CXX)
 
-set(MSG_TYPES io proc dev)
+set(MSG_TYPES io proc dev fsys common)
 list(TRANSFORM MSG_TYPES PREPEND ${PROJECT_SOURCE_DIR}/msg/ OUTPUT_VARIABLE MSG_DEFS)
 list(TRANSFORM MSG_DEFS APPEND .qmsg OUTPUT_VARIABLE MSG_DEFS)
 
@@ -38,7 +38,7 @@ target_include_directories(qine PRIVATE ${PROJECT_BINARY_DIR} ${PROJECT_SOURCE_D
 add_custom_command(
   OUTPUT ${MSG_SRC} ${MSG_H}
   COMMAND ${PROJECT_SOURCE_DIR}/msg/gen.py -d ${PROJECT_BINARY_DIR}/gen_msg ${MSG_DEFS}
-  DEPENDS ${MSG_DEFS}
+  DEPENDS ${MSG_DEFS} msg/gen.py msg/qmsg.lark
 )
 
 target_compile_features(qine PUBLIC cxx_std_17)

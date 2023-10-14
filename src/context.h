@@ -59,7 +59,7 @@ public:
     void push_stack(uint32_t value);
     uint32_t pop_stack();
 
-    void dump(FILE *stream);
+    void dump(FILE *stream, size_t stack = 0);
     std::string read_string(FarPointer ptr, size_t size = 256);
 
     inline greg_t& reg(int reg);

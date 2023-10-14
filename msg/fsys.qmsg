@@ -1,0 +1,10 @@
+include common : open;
+
+msg unlink {
+    type: 0x203;
+
+    request open;
+    reply {
+        status: u16;
+    }
+}

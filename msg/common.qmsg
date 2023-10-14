@@ -1,0 +1,15 @@
+struct open {
+    # sync with proc.qms open
+    type: u16 hex;
+    fd: fd;
+    unit: u16 hex;
+    version_cycle: u8 hex;
+    eflag: u8 hex;
+    nid: nid;
+    pid: pid;
+    sflag: u16 hex;
+    oflag: u16 hex;
+    mode: u16 hex;
+    zero: u32 hex;
+    path: path;
+}

@@ -1,24 +1,32 @@
-#include <asm-generic/errno-base.h>
-#include <cerrno>
+
+#include <bits/types/struct_timespec.h>
+#include <cstdint>
+#include <cstdio>
+#include <ctime>
+#include <errno.h>
+#include <stdint.h>
 #include <ios>
-#include <new>
+#include <limits>
 #include <stdexcept>
 #include <string.h>
+#include <sys/stat.h>
 #include <system_error>
 #include <unistd.h>
 #include <fcntl.h>
+#include <time.h>
 #include <sys/types.h>
 #include <sys/ucontext.h>
 #include <sys/uio.h>
-#include <fcntl.h>
-#include <unistd.h>
 
+#include "gen_msg/common.h"
 #include "gen_msg/dev.h"
+#include "gen_msg/fsys.h"
 #include "mem_ops.h"
 #include "process.h"
 #include "msg_handler.h"
 #include "main_handler.h"
 #include "qnx/errno.h"
+#include "qnx/io.h"
 #include "qnx/msg.h"
 #include "types.h"
 #include "log.h"
@@ -45,6 +53,9 @@ void MainHandler::receive(MsgInfo& i) {
                 break;
             }
             break;
+        case QnxMsg::proc::msg_time::TYPE:
+            proc_time(i);
+            break;
         case QnxMsg::proc::msg_terminate::TYPE:
             proc_terminate(i);
             break;
@@ -64,10 +75,17 @@ void MainHandler::receive(MsgInfo& i) {
                 break;
             };
             break;
+        case QnxMsg::proc::msg_vc_detach::TYPE:
+            proc_vc_detach(i);
+            break;
+        case QnxMsg::io::msg_handle::TYPE:
         case QnxMsg::io::msg_io_open::TYPE:
             io_open(i);
             break;
-        case QnxMsg::io::msg_io_close::TYPE:
+        case QnxMsg::io::msg_stat::TYPE:
+            io_stat(i);
+            break;
+        case QnxMsg::io::msg_close::TYPE:
             io_close(i);
             break;
         case QnxMsg::io::msg_read::TYPE:
@@ -78,6 +96,10 @@ void MainHandler::receive(MsgInfo& i) {
             break;
         case QnxMsg::io::msg_lseek::TYPE:
             io_lseek(i);
+            break;
+
+        case QnxMsg::fsys::msg_unlink::TYPE:
+            fsys_unlink(i);
             break;
 
         case QnxMsg::dev::msg_tcgetattr::TYPE:
@@ -94,7 +116,30 @@ void MainHandler::proc_terminate(MsgInfo& i)
 {
     QnxMsg::proc::terminate_request msg;
     i.msg().read_type(&msg);
+    //i.ctx().dump(stdout);
     exit(msg.m_status);
+}
+
+void MainHandler::proc_time(MsgInfo& i)
+{
+    QnxMsg::proc::time_request msg;
+    i.msg().read_type(&msg);
+    QnxMsg::proc::time_reply reply;
+    memset(&reply, 0, sizeof(reply));
+    if (msg.m_seconds == std::numeric_limits<uint32_t>::max()) {
+        struct timespec ts;
+        if (clock_gettime(CLOCK_REALTIME, &ts) < 0) {
+            reply.m_status = Emu::map_errno(errno);
+        } else {
+            reply.m_status = Qnx::QEOK;
+            reply.m_seconds = ts.tv_sec;
+            reply.m_nsec = ts.tv_nsec;
+        }
+    } else {
+        reply.m_status = Qnx::QENOTSUP;
+        Log::print(Log::UNHANDLED, "set time not supported\n");
+    }
+    i.msg().write_type(0, &reply);
 }
 
 void MainHandler::proc_fd_attach(MsgInfo& i)
@@ -173,7 +218,8 @@ void MainHandler::proc_segment_realloc(MsgInfo& i)
 }
 
 void MainHandler::proc_open(MsgInfo& i) {
-    QnxMsg::proc::open msg;
+    /* proc_open does not actually open a file, just resolves the file name*/
+    QnxMsg::common::open msg;
     i.msg().read_type(&msg);
 
     msg.m_type = Qnx::QEOK;
@@ -181,13 +227,45 @@ void MainHandler::proc_open(MsgInfo& i) {
     i.msg().write_type(0, &msg);
 }
 
+void MainHandler::proc_vc_detach(MsgInfo& i) 
+{
+    /* This is stubbed, because QNX/slib seems to have a bug where the stat result
+     * overwrites the NID in the message and it then mistakenly calls vc_detach.*/
+    i.msg().write_status(Qnx::QEOK);
+}
+
 void MainHandler::io_open(MsgInfo& i) {
-    QnxMsg::proc::open msg;
+    QnxMsg::common::open msg;
     i.msg().read_type(&msg);
 
-    int mapped_oflags = O_RDONLY;    
+    int mapped_oflags = O_RDONLY;
+    int oflag = msg.m_oflag;
+    int eflags = msg.m_eflag;
+    if (msg.m_type == QnxMsg::io::msg_io_open::TYPE) {
+        if (oflag & Qnx::QO_WRONLY)
+            mapped_oflags |= O_WRONLY;
+        
+        if (oflag & Qnx::QO_RDWR)
+            mapped_oflags |= O_RDWR;
+
+        if (oflag & Qnx::QO_APPEND)
+            mapped_oflags |= O_APPEND;
+
+        if (oflag & Qnx::QO_CREAT)
+            mapped_oflags |= O_CREAT;
+        
+        if (oflag & Qnx::QO_TRUNC)
+            mapped_oflags |= O_TRUNC;
+    } else if (msg.m_type == QnxMsg::io::msg_handle::TYPE) {
+        if (msg.m_oflag == Qnx::IO_HNDL_RDDIR) {
+            mapped_oflags |= O_DIRECTORY;
+        } else {
+            mapped_oflags |= O_PATH;
+        }
+    }
+    
     // TODO: handle cloexec and flags
-    int fd = ::open(msg.m_path, mapped_oflags);;
+    int fd = ::open(msg.m_path, mapped_oflags, msg.m_mode);
     if (fd < 0) {
         i.msg().write_status(Emu::map_errno(errno));
         return;
@@ -203,6 +281,40 @@ void MainHandler::io_open(MsgInfo& i) {
     }
     close(fd);
     i.msg().write_type(0, &msg);
+}
+
+void MainHandler::io_stat(MsgInfo& i) {
+    QnxMsg::common::open msg;
+    i.msg().read_type(&msg);
+    struct stat sb;
+
+    QnxMsg::io::stat_reply reply;
+    memset(&reply, 0, sizeof(reply));
+    int r = stat(msg.m_path, &sb);
+    if (r < 0) {
+        reply.m_status = Emu::map_errno(errno);
+        i.msg().write_type(0, &reply);
+        return;
+    }
+
+    transfer_stat(reply.m_stat, sb);
+    i.msg().write_type(0, &reply);
+}
+
+void MainHandler::transfer_stat(QnxMsg::io::stat& dst, struct stat& src) {
+    dst.m_ino = src.st_ino;
+    dst.m_dev = src.st_dev;
+    dst.m_size = src.st_size;
+    dst.m_rdev = src.st_rdev;
+    dst.m_ftime = 0;
+    dst.m_mtime = src.st_mtim.tv_sec;
+    dst.m_atime = src.st_atim.tv_sec;
+    dst.m_ctime = src.st_ctim.tv_sec;
+    dst.m_mode = src.st_mode;
+    dst.m_uid = src.st_uid;
+    dst.m_gid = src.st_gid;
+    dst.m_nlink = src.st_nlink;
+    dst.m_status = 0;
 }
 
 void MainHandler::io_close(MsgInfo& i) {
@@ -260,6 +372,14 @@ void MainHandler::io_write(MsgInfo &i) {
         reply.m_nbytes = r;
     }
     i.msg().write_type(0, &reply);
+}
+
+void MainHandler::fsys_unlink(MsgInfo &i) {
+    QnxMsg::common::open msg;
+    i.msg().read_type(&msg);
+
+    int r = unlink(msg.m_path);
+    i.msg().write_status(Emu::map_errno(r));
 }
 
 void MainHandler::dev_tcgetattr(MsgInfo &i) {

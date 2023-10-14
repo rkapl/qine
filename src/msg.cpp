@@ -119,6 +119,24 @@ void Msg::read(void *dstv, size_t msg_offset, size_t size) {
     memset(dst, 0xCC, size);
 }
 
+void Msg::read_written(void *dstv, size_t msg_offset, size_t size) {
+    auto i = iterate_receive();
+    uint8_t *dst = static_cast<uint8_t*>(dstv);
+    i.skip_to(msg_offset);
+
+    while (size) {
+        auto slice = i.next(size);
+        if (slice.is_empty())
+            break;
+        auto src = m_proc->translate_segmented(slice.m_ptr, slice.m_size, RwOp::READ);
+        memcpy(dst, src, slice.m_size);
+        dst += slice.m_size;
+        size -= slice.m_size;
+    }
+
+    memset(dst, 0xCC, size);
+}
+
 size_t Msg::write(size_t msg_offset, const void *srcv, size_t size)
 {
     size_t orig_size = size;

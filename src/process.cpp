@@ -11,6 +11,7 @@
 #include <sys/ucontext.h>
 
 #include "gen_msg/dev.h"
+#include "gen_msg/fsys.h"
 #include "gen_msg/io.h"
 #include "gen_msg/proc.h"
 #include "msg/meta.h"
@@ -62,7 +63,7 @@ Qnx::pid_t Process::parent_pid()
 
 Qnx::pid_t Process::nid()
 {
-    return 0x1002;
+    return 0x1;
 }
 
 void Process::enter_emu()
@@ -169,6 +170,9 @@ void Process::handle_msg(MsgInfo& m)
             case 1: 
                 ml = &QnxMsg::io::list;
                 break;
+            case 2:
+                ml = &QnxMsg::fsys::list;
+                break;
             case 3:
                 ml = &QnxMsg::dev::list;
                 break;
@@ -183,8 +187,12 @@ void Process::handle_msg(MsgInfo& m)
     Log::if_enabled(Log::MSG, [&](FILE *s) {
         find_msg();
         if (msg_type) {
-            fprintf(stdout, "request %s {\n", msg_type->m_name);
-            Meta::dump_structure(s, 0, *msg_type->m_request, msg);
+            if (m.m_via_fd) {
+                fprintf(stdout, "request %s fd %d {\n", msg_type->m_name, m.m_fd);
+            } else {
+                fprintf(stdout, "request %s pid %d {\n", msg_type->m_name, m.m_pid);
+            }
+            Meta::dump_structure(s, *msg_type->m_request, msg);
             fprintf(stdout, "}\n");
         } else {
             msg.dump_send(s);
@@ -199,8 +207,8 @@ void Process::handle_msg(MsgInfo& m)
         find_msg();
         if (msg_type) {
             fprintf(stdout, "reply %s {\n", msg_type->m_name);
-            Meta::dump_structure(s, 0, *msg_type->m_reply, msg);
-            fprintf(stdout, "\n");
+            Meta::dump_structure_written(s, *msg_type->m_reply, msg);
+            fprintf(stdout, "}\n");
         }
     });
 }
@@ -238,7 +246,7 @@ void Process::setup_startup_context(int argc, char **argv)
 
     /* Now create the stack environment, that is argc, argv, arge  */
     ctx.push_stack(0); // Unknown
-    ctx.push_stack(1); // nid?
+    ctx.push_stack(nid()); // nid?
     ctx.push_stack(parent_pid());
     ctx.push_stack(pid());
 
@@ -249,7 +257,7 @@ void Process::setup_startup_context(int argc, char **argv)
     alloc.push_string(cwd_env.c_str());
 
     ctx.push_stack(alloc.offset());
-    alloc.push_string("__PFX=//0");
+    alloc.push_string("__PFX=//1");
     ctx.push_stack(alloc.offset());
 
     /* Argv */

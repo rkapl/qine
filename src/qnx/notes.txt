@@ -54,3 +54,6 @@ https://www.qnx.com/developers/docs/6.3.2/neutrino/prog/resmgr.html
 2) allocate FD
 3) contact iomgr
 
+https://github.com/sam-github/vf
+https://github.com/sam-github/vf/blob/f8b4e1b0676b54825b740e1e9af8b11b08aa7337/vf_mgr.h#L79
+
