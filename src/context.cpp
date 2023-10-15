@@ -112,6 +112,48 @@ void Context::dump(FILE *s, size_t stack) {
     #endif
 }
 
+void Context::save_context()
+{
+    auto esp = reg_esp();
+    /* pushad */
+    push_stack(reg_eax());
+    push_stack(reg_ecx());
+    push_stack(reg_edx());
+    push_stack(reg_ebx());
+    push_stack(esp);
+    push_stack(reg_ebp());
+    push_stack(reg_esi());
+    push_stack(reg_edi());
+
+    push_stack(reg_eflags());
+    push_stack(reg_cs());
+    push_stack(reg_eip());
+    push_stack(reg_ds());
+    push_stack(reg_es());
+    push_stack(reg_gs());
+    push_stack(reg_ss());
+}
+
+void Context::restore_context()
+{
+    reg_ss() = pop_stack();
+    reg_gs() = pop_stack();
+    reg_es() = pop_stack();
+    reg_ds() = pop_stack();
+    reg_eip() = pop_stack();
+    reg_cs() = pop_stack();
+    reg_eflags() = pop_stack();
+
+    reg_edi() = pop_stack();
+    reg_esi() = pop_stack();
+    reg_ebp() = pop_stack();
+    /* esp = */ pop_stack();
+    reg_ebx() = pop_stack();
+    reg_edx() = pop_stack();
+    reg_ecx() = pop_stack();
+    reg_eax() = pop_stack();
+}
+
 std::string Context::read_string(FarPointer ptr, size_t size) {
     std::string acc;
     try {

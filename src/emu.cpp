@@ -1,3 +1,7 @@
+#include <bits/types/sigset_t.h>
+#include <csignal>
+#include <cstdint>
+#include <cstdio>
 #include <stdexcept>
 #include <vector>
 #include <errno.h>
@@ -11,6 +15,8 @@
 #include "msg_handler.h"
 #include "qnx/errno.h"
 #include "qnx/magic.h"
+#include "qnx/procenv.h"
+#include "qnx/signal.h"
 #include "qnx/types.h"
 #include "qnx/msg.h"
 #include "msg/dump.h"
@@ -27,16 +33,16 @@
 Emu::Emu() {}
 
 void Emu::init() {
-    m_stack = Process::current()->allocate_segment();
+    m_emulation_stack = Process::current()->allocate_segment();
     size_t stack_size = MemOps::PAGE_SIZE*8;
     size_t with_guard = MemOps::PAGE_SIZE + stack_size;
-    m_stack->reserve(with_guard);
-    m_stack->skip(MemOps::PAGE_SIZE);
-    m_stack->grow(Access::READ_WRITE, stack_size);
+    m_emulation_stack->reserve(with_guard);
+    m_emulation_stack->skip(MemOps::PAGE_SIZE);
+    m_emulation_stack->grow(Access::READ_WRITE, stack_size);
 
     stack_t sas = {};
     sas.ss_size = MemOps::PAGE_SIZE*8;
-    sas.ss_sp = reinterpret_cast<void*>(m_stack->location() + MemOps::PAGE_SIZE);
+    sas.ss_sp = reinterpret_cast<void*>(m_emulation_stack->location() + MemOps::PAGE_SIZE);
     sas.ss_flags = 0;
     if (sigaltstack(&sas, nullptr) != 0) {
         throw std::runtime_error(strerror(errno));
@@ -77,11 +83,103 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
     }
     
     if (!handled) {
-        ctx.dump(stdout);
-        debug_hook();
+        raise(Qnx::QSIGSEGV);
     }
+
+    signal_tail(ctx);
     ectx.to_cpu();
 }
+
+qine_no_tls void Emu::static_handler_generic(int sig, siginfo_t *info, void *uctx) {
+    Process::current()->m_emu.handler_generic(sig, info, uctx);;
+}
+
+qine_no_tls void Emu::handler_generic(int sig, siginfo_t *info, void *uctx_void) {
+    m_tls_fixup.restore();
+
+    // now we have normal C environment
+    ExtraContext ectx;
+    ectx.from_cpu();
+    auto ctx = Context(reinterpret_cast<ucontext_t*>(uctx_void), &ectx);
+
+
+    int qnx_sig = map_sig_host_to_qnx(sig);
+    if (qnx_sig == -1) {
+        throw GuestStateException("Received signal, it is registered, but not QNX signal.");
+    }
+
+    m_sigpend |= (1u << qnx_sig);
+
+    signal_tail(ctx);
+
+    ectx.to_cpu();
+}
+
+/* 
+ * This functions is called on exit from a host signal and is responsible 
+ * for setting up QNX signal state if there is a pending signal.
+ */
+void Emu::signal_tail(Context& ctx) {
+    if (m_sigpend == 0)
+        return;
+
+    if ((ctx.reg_cs() & SegmentDescriptor::SEL_LDT) == 0) {
+        /* We are returning to host code -- do not setup QNX signal yet */
+        return;
+    }
+
+    /* Find and pop the signal */
+    int qnx_sig;
+    for (qnx_sig = 0; qnx_sig < Qnx::QSIG_COUNT; qnx_sig++) {
+        if (m_sigpend & (1u << qnx_sig))
+            break;
+    }
+    m_sigpend &= ~(1u << qnx_sig);
+    
+    auto proc = ctx.proc();
+    if (!proc->m_sigtab) {
+        ctx.dump(stdout);
+        debug_hook();
+        throw GuestStateException("Received signal, but no sigtab registered by guest.");
+    }
+
+
+    auto act = &proc->m_sigtab->actions[qnx_sig];
+    if (act->handler_fn == Qnx::QSIG_DFL || act->handler_fn == Qnx::QSIG_ERR || act->handler_fn == Qnx::QSIG_HOLD) {
+        ctx.dump(stdout);
+        debug_hook();
+        throw GuestStateException("Received signal, but handler not registered");
+    }
+
+    uint32_t mask = act->mask | (1u << qnx_sig);
+    m_sigmask |= mask;
+    
+    ctx.save_context();
+
+    // TODO: does QNX have redline?
+    // TODO: does QNX have siginfo?
+
+    // our stuff
+    ctx.push_stack(mask);
+
+    // arguments to sigstub
+    ctx.push_stack(0); // unknown
+    ctx.push_stack(qnx_sig);
+    ctx.push_stack(act->handler_fn);
+
+    ctx.reg_cs() = proc->m_load.entry_main->m_segment;
+    ctx.reg_eip() = proc->m_sigtab->sigstub;
+    Log::print(Log::SIGNAL, "raised signal %d\n", qnx_sig);
+}
+
+void Emu::syscall_sigreturn(Context &ctx)
+{
+    uint32_t mask = ctx.pop_stack();
+    ctx.restore_context();
+
+    m_sigmask &= ~mask;
+}
+
 
 void Emu::dispatch_syscall(Context& ctx)
 {
@@ -90,8 +188,14 @@ void Emu::dispatch_syscall(Context& ctx)
         case 0:
             syscall_sendmx(ctx);
             break;
+        case 7:
+            syscall_sigreturn(ctx);
+            break;
         case 11:
             syscall_sendfdmx(ctx);
+            break;
+        case 14:
+            syscall_kill(ctx);
             break;
         default:
             printf("Unknown syscall %d\n", syscall);
@@ -140,6 +244,28 @@ void Emu::syscall_sendmx(Context &ctx)
     info.m_pid = pid;
 
     proc->handle_msg(info);
+}
+
+void Emu::syscall_kill(Context &ctx)
+{
+    int pid = ctx.reg_edx();
+    int qnx_signo = ctx.reg_ebx();
+    int host_signo = map_sig_qnx_to_host(qnx_signo);
+    if (host_signo == -1) {
+        ctx.reg_eax() = Qnx::QEINVAL;
+        return;
+    }
+    if (pid != Process::current()->pid()) {
+        ctx.reg_eax() = Qnx::QESRCH;
+        return;
+    }
+    signal_raise(qnx_signo);
+    ctx.reg_eax() = Qnx::QEOK;
+}
+
+void Emu::signal_raise(int qnx_sig)
+{
+    m_sigpend |= (1u << qnx_sig);
 }
 
 void Emu::debug_hook() {
@@ -194,7 +320,49 @@ void Emu::enter_emu() {
     if (sigaction(SIGUSR1, &sa, nullptr)) {
         throw std::runtime_error(strerror(errno));
     }
-    kill(getpid(), SIGUSR1);
+    raise(SIGUSR1);
+}
+
+int Emu::signal_sigact(int qnx_sig, uint32_t handler, uint32_t mask)
+{
+    auto sigtab = Process::current()->m_sigtab;
+    if (!sigtab) {
+        throw GuestStateException("Sigtab not registered");
+    }
+
+    int host_sig = map_sig_qnx_to_host(qnx_sig);
+    if (host_sig == -1) {
+        return Qnx::QEINVAL;
+    }
+
+    struct sigaction sa = {0};
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    sa.sa_mask = map_sigmask_qnx_to_host(mask);
+    
+    if (handler == Qnx::QSIG_DFL) {
+        sa.sa_handler = SIG_DFL;
+    } else if (handler == Qnx::QSIG_IGN) {
+        sa.sa_handler = SIG_IGN;
+    } else if (handler == Qnx::QSIG_ERR) {
+        sa.sa_handler = SIG_ERR;
+    } else if (handler == Qnx::QSIG_HOLD) {
+        sa.sa_handler = SIG_HOLD;
+    } else {
+        sa.sa_sigaction = static_handler_generic;
+    }
+    
+    int r = sigaction(host_sig, &sa, NULL);
+    if (r != 0) {
+        return map_errno(r);
+    }
+
+    auto si = &sigtab->actions[qnx_sig];
+    si->flags = 0;
+    si->handler_fn = handler;
+    si->mask = mask;
+    
+    // printf("Registered %d for (%d)\n", host_sig, qnx_sig);
+    return Qnx::QEOK;
 }
 
 #define ERRNO_MAP \
@@ -294,8 +462,70 @@ Qnx::errno_t Emu::map_errno(int v) {
     #undef MAP
 }
 
+#define SIG_MAP \
+    MAP(SIGHUP, Qnx::QSIGHUP) \
+    MAP(SIGINT, Qnx::QSIGINT) \
+    MAP(SIGQUIT, Qnx::QSIGQUIT) \
+    MAP(SIGILL, Qnx::QSIGILL) \
+    MAP(SIGTRAP, Qnx::QSIGTRAP) \
+    MAP(SIGIOT, Qnx::QSIGIOT) \
+    MAP(SIGFPE, Qnx::QSIGFPE) \
+    MAP(SIGKILL, Qnx::QSIGKILL) \
+    MAP(SIGBUS, Qnx::QSIGBUS) \
+    MAP(SIGSEGV, Qnx::QSIGSEGV) \
+    MAP(SIGSYS, Qnx::QSIGSYS) \
+    MAP(SIGPIPE, Qnx::QSIGPIPE) \
+    MAP(SIGALRM, Qnx::QSIGALRM) \
+    MAP(SIGTERM, Qnx::QSIGTERM) \
+    MAP(SIGUSR1, Qnx::QSIGUSR1) \
+    MAP(SIGUSR2, Qnx::QSIGUSR2) \
+    MAP(SIGCHLD, Qnx::QSIGCHLD) \
+    MAP(SIGPWR, Qnx::QSIGPWR) \
+    MAP(SIGWINCH, Qnx::QSIGWINCH) \
+    MAP(SIGURG, Qnx::QSIGURG) \
+    MAP(SIGIO, Qnx::QSIGIO) \
+    MAP(SIGSTOP, Qnx::QSIGSTOP) \
+    MAP(SIGCONT, Qnx::QSIGCONT) \
+    MAP(SIGTTIN, Qnx::QSIGTTIN) \
+    MAP(SIGTTOU, Qnx::QSIGTTOU)
+
+// handle sigtstp, dev and emt separately
+
+int Emu::map_sig_host_to_qnx(int sig) {
+    #define MAP(h, q) case h: return q;
+    switch(sig) {
+        SIG_MAP
+        default:
+            return -1;
+    }
+    #undef MAP
+}
+
+int Emu::map_sig_qnx_to_host(int sig) {
+    #define MAP(h, q) case q: return h;
+    switch(sig) {
+        SIG_MAP
+        default:
+            return -1;
+    }
+    #undef MAP
+}
+
+sigset_t Emu::map_sigmask_qnx_to_host(uint32_t mask) {
+    sigset_t acc;
+    sigemptyset(&acc);
+    for (int sig = 0; sig < 32; sig++) {
+        int host_sig = map_sig_qnx_to_host(sig);
+        if (host_sig)
+            continue;
+        if (mask & (1u << sig))
+            sigaddset(&acc, host_sig);
+    }
+    return acc;
+}
+
 Emu::~Emu() {
-    if (!m_stack)
+    if (!m_emulation_stack)
         return;
 
     signal(SIGUSR1, SIG_DFL);

@@ -38,6 +38,7 @@ Process* Process::m_current = nullptr;
 
 Process::Process(): 
     m_segment_descriptors(1024),
+    m_sigtab(nullptr),
     m_fds(),
     m_magic_guest_pointer(FarPointer::null())
 {

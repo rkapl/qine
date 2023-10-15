@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/types.h>
@@ -9,7 +10,7 @@
 
 namespace Qnx {
     using Sigset = uint32_t;
-    constexpr size_t SIG_COUNT = 32;
+    constexpr size_t QSIG_COUNT = 32;
 
     struct Sigaction {
         uint32_t handler_fn;
@@ -19,9 +20,8 @@ namespace Qnx {
 
     /* This layout is described in the SIN manual */
     struct Sigtab {
-        uint16_t unknown_1;
-        uint16_t unknown_2;
-        Sigaction actions[SIG_COUNT];
+        uint32_t sigstub;
+        Sigaction actions[QSIG_COUNT];
     } qine_attribute_packed;
 
     /* Reverse-enginnered from Slib32 */

@@ -95,7 +95,9 @@ private:
 
     std::shared_ptr<Segment> m_magic_pointer;
     FarPointer m_magic_guest_pointer;
-    Qnx::Magic* m_magic;
+    Qnx::Magic *m_magic;
+
+    Qnx::Sigtab *m_sigtab;
 
     Emu m_emu;
     std::string m_file_name;

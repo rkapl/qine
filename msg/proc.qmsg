@@ -134,3 +134,67 @@ msg psinfo {
         # 16 segs follow
     }
 }
+
+struct signal_request {
+    type: u16;
+    subtype: u16;
+
+    signum: u16;
+    pid: pid;
+    padd: u16;
+    mask: u32 hex;
+    bits: u32 hex;
+    offset: u32 hex;
+    segment: u16 hex;
+}
+
+struct signal_reply {
+    status: u16;
+    padd: u16;
+    old_bits: u32 hex;
+    new_bits: u32 hex;
+}
+
+msg sigtab {
+    type: 8;
+    subtype: 0;
+    request signal_request;
+    reply signal_reply;
+}
+
+# sigaction subtype 1 deprecated
+
+msg sigmask {
+    type: 8;
+    subtype: 2;
+    request signal_request;
+    reply signal_reply;
+}
+
+msg sigraise {
+    type: 8;
+    subtype: 3;
+    request signal_request;
+    reply signal_reply;
+}
+
+msg sigpending {
+    type: 8;
+    subtype: 4;
+    request signal_request;
+    reply signal_reply;
+}
+
+msg sigact {
+    type: 8;
+    subtype: 5;
+    request signal_request;
+    reply signal_reply;
+}
+
+msg sigsuspend {
+    type: 8;
+    subtype: 6;
+    request signal_request;
+    reply signal_reply;
+}

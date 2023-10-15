@@ -30,6 +30,7 @@
 #include "qnx/errno.h"
 #include "qnx/io.h"
 #include "qnx/msg.h"
+#include "qnx/procenv.h"
 #include "qnx/psinfo.h"
 #include "qnx/types.h"
 #include "types.h"
@@ -88,7 +89,16 @@ void MainHandler::receive(MsgInfo& i) {
         case QnxMsg::proc::msg_psinfo::TYPE:
             proc_psinfo(i);
             break;
-
+        case QnxMsg::proc::msg_sigtab::TYPE:
+            switch(hdr.subtype) {
+                case QnxMsg::proc::msg_sigtab::SUBTYPE:
+                    proc_sigtab(i);
+                    break;
+                case QnxMsg::proc::msg_sigact::SUBTYPE:
+                    proc_sigact(i);
+                    break;
+            }; 
+            break;
 
         case QnxMsg::io::msg_handle::TYPE:
         case QnxMsg::io::msg_io_open::TYPE:
@@ -300,6 +310,24 @@ void MainHandler::proc_psinfo(MsgInfo &i)
     strlcpy(ps.proc.name, proc->file_name().c_str(), sizeof(ps.proc.name));
     
     i.msg().write_type(2, &ps);
+}
+
+void MainHandler::proc_sigtab(MsgInfo &i) {
+    auto proc = Process::current();
+    QnxMsg::proc::signal_request msg;
+    i.msg().read_type(&msg);
+
+    auto sigtabv = proc->translate_segmented(FarPointer(i.ctx().reg_ds(), msg.m_offset), sizeof(Qnx::Sigtab));
+    proc->m_sigtab = static_cast<Qnx::Sigtab*>(sigtabv);
+    
+    i.msg().write_status(Qnx::QEOK);
+}
+
+void MainHandler::proc_sigact(MsgInfo &i) {
+    QnxMsg::proc::signal_request msg;
+    i.msg().read_type(&msg);
+    int r = i.ctx().proc()->m_emu.signal_sigact(msg.m_signum, msg.m_offset, msg.m_mask);
+    i.msg().write_status(r);
 }
 
 void MainHandler::io_open(MsgInfo& i) {
