@@ -32,6 +32,8 @@ private:
     void io_read(MsgInfo &i);
     void io_write(MsgInfo &i);
     void io_lseek(MsgInfo &i);
+    void io_readdir(MsgInfo &i);
+    void io_rewinddir(MsgInfo &i);
 
     void fsys_unlink(MsgInfo &i);
 

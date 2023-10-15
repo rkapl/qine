@@ -7,6 +7,7 @@
 #include <sys/ucontext.h>
 #include <vector>
 #include <memory>
+#include <map>
 #include <ucontext.h>
 
 #include "context.h"
@@ -81,12 +82,15 @@ private:
     SegmentDescriptor* descriptor_by_selector(uint16_t id);
     void setup_magic(SegmentDescriptor *data_sd, SegmentAllocator& alloc);
 
+    ProcessFd *fd_get(int id);
+    void fd_release(int id);
+
     static Process* m_current;
 
     IntrusiveList::List<Segment> m_segments;
     IdMap<SegmentDescriptor> m_segment_descriptors;
     
-    IdMap<QnxFd> m_fds;
+    std::map<int, ProcessFd> m_fds;
     MainHandler m_main_handler;
 
     std::shared_ptr<Segment> m_magic_pointer;

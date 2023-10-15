@@ -18,6 +18,7 @@
 #include "gen_msg/proc.h"
 #include "msg/meta.h"
 #include "msg/dump.h"
+#include "process_fd.h"
 #include "qnx/magic.h"
 #include "qnx/msg.h"
 #include "qnx/procenv.h"
@@ -37,7 +38,7 @@ Process* Process::m_current = nullptr;
 
 Process::Process(): 
     m_segment_descriptors(1024),
-    m_fds(1024),
+    m_fds(),
     m_magic_guest_pointer(FarPointer::null())
 {
 }
@@ -221,7 +222,7 @@ void Process::handle_msg(MsgInfo& m)
 
 static std::string cpp_getcwd() {
     std::string s;
-    s.resize(Qnx::PATH_MAX);
+    s.resize(Qnx::QPATH_MAX_T);
     if (getcwd(s.data(), s.length()) != NULL) {
         return s;
     } else {
@@ -268,7 +269,7 @@ void Process::setup_startup_context(int argc, char **argv)
     ctx.push_stack(alloc.offset());
 
     /* Argv */
-    m_file_name.resize(Qnx::PATH_MAX);
+    m_file_name.resize(Qnx::QPATH_MAX_T);
     if (!realpath(argv[0], m_file_name.data())) {
         throw std::system_error(errno, std::system_category());
     }
@@ -306,4 +307,13 @@ void Process::setup_startup_context(int argc, char **argv)
 
     // breakpoints
     //ctx.write<uint8_t>(Context::CS, 0x61e , 0xCC);
+}
+
+ProcessFd* Process::fd_get(int id) {
+    /* fields are default initialised */
+    return &m_fds[id];
+}
+
+void Process::fd_release(int id) {
+    m_fds.erase(id);
 }

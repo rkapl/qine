@@ -1,4 +1,9 @@
 #pragma  once
-struct QnxFd {
-    /* see qnx_attach_fd et. al to see what could be stored here */
+
+#include <dirent.h>
+
+/* Information for FD in a QNX process */
+struct ProcessFd {
+    ProcessFd():m_dir(nullptr) {}
+    DIR *m_dir;
 };

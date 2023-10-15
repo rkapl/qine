@@ -1,8 +1,10 @@
 
 #include <bits/types/struct_timespec.h>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <ctime>
+#include <dirent.h>
 #include <errno.h>
 #include <stdint.h>
 #include <ios>
@@ -29,6 +31,7 @@
 #include "qnx/io.h"
 #include "qnx/msg.h"
 #include "qnx/psinfo.h"
+#include "qnx/types.h"
 #include "types.h"
 #include "log.h"
 #include <gen_msg/proc.h>
@@ -85,6 +88,8 @@ void MainHandler::receive(MsgInfo& i) {
         case QnxMsg::proc::msg_psinfo::TYPE:
             proc_psinfo(i);
             break;
+
+
         case QnxMsg::io::msg_handle::TYPE:
         case QnxMsg::io::msg_io_open::TYPE:
             io_open(i);
@@ -106,6 +111,12 @@ void MainHandler::receive(MsgInfo& i) {
             break;
         case QnxMsg::io::msg_lseek::TYPE:
             io_lseek(i);
+            break;
+        case QnxMsg::io::msg_readdir::TYPE:
+            io_readdir(i);
+            break;
+        case QnxMsg::io::msg_rewinddir::TYPE:
+            io_rewinddir(i);
             break;
 
         case QnxMsg::fsys::msg_unlink::TYPE:
@@ -190,7 +201,16 @@ void MainHandler::proc_fd_detach(MsgInfo& i) {
     QnxMsg::proc::fd_request fd;
     i.msg().read_type(&fd);
 
-    int r = close(fd.m_fd);
+    auto fdi = i.ctx().proc()->fd_get(fd.m_fd);
+
+    int r;
+    if (fdi->m_dir) {
+        r = closedir(fdi->m_dir);
+    } else {
+        r = close(fd.m_fd);
+    }
+
+    i.ctx().proc()->fd_release(fd.m_fd);
     if (r < 0) {
         i.msg().write_status(Emu::map_errno(errno));
     } else {
@@ -365,6 +385,67 @@ void MainHandler::io_fstat(MsgInfo& i) {
 
     transfer_stat(reply.m_stat, sb);
     i.msg().write_type(0, &reply);
+}
+
+void MainHandler::io_readdir(MsgInfo &i)
+{
+    QnxMsg::io::readdir_request msg;
+    i.msg().read_type(&msg);
+
+    auto fd = i.ctx().proc()->fd_get(msg.m_fd);
+    if (!fd->m_dir) {
+        fd->m_dir = fdopendir(msg.m_fd);
+        if (!fd->m_dir) {
+            i.msg().write_status(Emu::map_errno(errno));
+            return;
+        }
+    }
+
+    constexpr size_t dirent_size = sizeof(QnxMsg::io::stat) + Qnx::QNAME_MAX_T;
+
+    // for each dirent, empty stat with (st_status & _FILE_USED) == 0
+    QnxMsg::io::stat stat;
+    memset(&stat, 0, sizeof(stat));
+
+    char path_buf[Qnx::QNAME_MAX_T];
+
+    QnxMsg::io::readdir_reply reply;
+    memset(&reply, 0x00, sizeof(reply));
+
+    //i.msg().dump_structure(stdout);
+    errno = 0;
+    size_t dst_off = sizeof(reply);
+    for (int di = 0; di < msg.m_ndirs; di++) {
+        struct dirent *d = readdir(fd->m_dir);
+        if (!d) {
+            if (errno == 0) {
+                
+                break;
+            } else {
+                reply.m_status = Emu::map_errno(errno);
+                return;
+            }
+        }
+
+        // write the dirent (stat + path)
+        strlcpy(path_buf, d->d_name, sizeof(path_buf));
+        i.msg().write_type(dst_off, &stat);
+        i.msg().write(dst_off + sizeof(stat), path_buf, sizeof(path_buf));
+        dst_off += dirent_size;
+        reply.m_ndirs++;
+    }
+
+    reply.m_status = Qnx::QEOK;
+    i.msg().write_type(0, &reply);
+}
+void MainHandler::io_rewinddir(MsgInfo &i) {
+    QnxMsg::io::readdir_request msg;
+    i.msg().read_type(&msg);
+    auto fd = i.ctx().proc()->fd_get(msg.m_fd);
+    if (fd->m_dir) {
+        rewinddir(fd->m_dir);
+    }
+    i.msg().write_status(Qnx::QEOK);
 }
 
 void MainHandler::transfer_stat(QnxMsg::io::stat& dst, struct stat& src) {

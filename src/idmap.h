@@ -6,8 +6,10 @@
 class OutOfFd: public std::bad_alloc {    
 };
 
-/* For FDs, PIDs, selectors etc. 
-* T must have default value usable for empty slots and be default-insertable. */
+/* 
+* For FDs, PIDs, selectors etc. 
+* T must have default value usable for empty slots and be default-insertable. 
+*/
 template <class T>
 class IdMap {
 public:
@@ -17,6 +19,8 @@ public:
     T* alloc_at(size_t i);
     T* alloc_starting_at(size_t i);
     T* get(size_t i);
+    void free(size_t i);
+
     size_t index_of(T* element);
 private:
     size_t m_max;

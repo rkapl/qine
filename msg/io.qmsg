@@ -126,3 +126,35 @@ msg fstat {
           stat: stat;
      }
 }
+
+msg readdir {
+     type: 0x112;
+
+     request {
+          fd: u16;
+          ndirs: u8;
+          padd: u8;
+          padd: u8;
+          padd: u8;
+     }
+
+     reply {
+          status: u16;
+          ndirs: u8;
+          padd: u8;
+          padd: u32;
+          # dirents follow
+     }
+}
+
+msg rewinddir {
+     type: 0x113;
+
+     request {
+          fd: u16;
+     }
+
+     reply {
+          status: u16;
+     }
+}
