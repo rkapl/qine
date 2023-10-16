@@ -20,3 +20,15 @@ msg tcgetattr {
      }
 }
 
+msg tcsetattr {
+     type: 0x311;
+     request {
+          fd: fd;
+          state: termios;
+          optional_actions: u16;
+     }
+     reply {
+          status: i16;
+     }
+}
+

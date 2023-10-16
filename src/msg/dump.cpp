@@ -35,7 +35,7 @@ static void print_field(FILE* s, const Meta::Field& f, int indent, size_t offset
             Meta::dump_substructure(s, *f.m_typeref, indent + 1, offset, msg_buf);
             print_indent(s, indent);
             fputs("   ", s);
-            fprintf(s, "}\n");
+            fprintf(s, "}");
             break;
         case Meta::Field::Format::U8:
         case Meta::Field::Format::I8:
@@ -72,7 +72,7 @@ void Meta::dump_substructure(FILE* s, const Struct &t, int indent, size_t offset
 {
     for(size_t fi = 0; fi < t.m_field_count; ++fi) {
         auto& f = t.m_fields[fi];
-        fprintf(s, "@%02x ", static_cast<uint32_t>(f.m_offset));
+        fprintf(s, "@%02x ", static_cast<uint32_t>(offset + f.m_offset));
         print_indent(s, indent);
         fprintf(s, "%s: ", f.m_name);
 

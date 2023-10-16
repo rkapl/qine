@@ -272,6 +272,15 @@ void Emu::signal_raise(int qnx_sig)
     m_sigpend |= (1u << qnx_sig);
 }
 
+void Emu::signal_mask(uint32_t change_mask, uint32_t bits)
+{
+    m_sigmask = (m_sigmask & ~change_mask) | bits;
+}
+
+uint32_t Emu::signal_getmask() {
+    return m_sigmask;
+}
+
 void Emu::debug_hook() {
 }
 

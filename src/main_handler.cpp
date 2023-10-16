@@ -19,17 +19,20 @@
 #include <sys/types.h>
 #include <sys/ucontext.h>
 #include <sys/uio.h>
+#include <termios.h>
 
 #include "gen_msg/common.h"
 #include "gen_msg/dev.h"
 #include "gen_msg/fsys.h"
 #include "mem_ops.h"
+#include "msg/meta.h"
 #include "process.h"
 #include "msg_handler.h"
 #include "main_handler.h"
 #include "qnx/errno.h"
 #include "qnx/io.h"
 #include "qnx/msg.h"
+#include "qnx/osinfo.h"
 #include "qnx/procenv.h"
 #include "qnx/psinfo.h"
 #include "qnx/types.h"
@@ -78,6 +81,9 @@ void MainHandler::receive(MsgInfo& i) {
                 case QnxMsg::proc::msg_fd_detach::SUBTYPE:
                     proc_fd_detach(i);
                 break;
+                case QnxMsg::proc::msg_fd_query::SUBTYPE:
+                    proc_fd_query(i);
+                break;
                 default:
                     unhandled_msg();
                 break;
@@ -116,6 +122,9 @@ void MainHandler::receive(MsgInfo& i) {
             }
         };
         break;
+        case QnxMsg::proc::msg_osinfo::TYPE:
+            proc_osinfo(i);
+            break;
 
         case QnxMsg::io::msg_handle::TYPE:
         case QnxMsg::io::msg_io_open::TYPE:
@@ -145,6 +154,12 @@ void MainHandler::receive(MsgInfo& i) {
         case QnxMsg::io::msg_rewinddir::TYPE:
             io_rewinddir(i);
             break;
+        case QnxMsg::io::msg_fcntl_flags::TYPE:
+            io_fcntl_flags(i);
+            break;
+        case QnxMsg::io::msg_dup::TYPE:
+            io_dup(i);
+            break;
 
         case QnxMsg::fsys::msg_unlink::TYPE:
             fsys_unlink(i);
@@ -152,6 +167,9 @@ void MainHandler::receive(MsgInfo& i) {
 
         case QnxMsg::dev::msg_tcgetattr::TYPE:
             dev_tcgetattr(i);
+            break;
+        case QnxMsg::dev::msg_tcsetattr::TYPE:
+            dev_tcsetattr(i);
             break;
 
         default:
@@ -194,25 +212,30 @@ void MainHandler::proc_fd_attach(MsgInfo& i)
 {
     /* FD allocation strategy:
      * We keep 1:1 mapping with Linux FD. That keeps things simple for now. It also allows us to inherit FDs.
-     * We use open(/dev/null) to reserver FD and later replace them with dup3.
+     * 
+     * There is currently a state in QNX that we will called "reserved. E.g. if QNX proc
+     * attaches to the FD, but does not yet open it, it is reserved. In the future, we should
+     * keep all this info, but for now we do not and just ignore the reservations and hope it will work out.
+     * 
+     * We also keep handle = fd at all time.
      */
     QnxMsg::proc::fd_request msg;
     i.msg().read_type(&msg);
 
-    if (msg.m_fd != 0) {
-        throw Unsupported("FD allocation from arbitrary number not supported");
-    }
-
-    int fd = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
-    if (fd < 0) {
-        if (errno == EMFILE){
-            i.msg().write_status(Qnx::QEMFILE);
-            return;
-        } else if (errno == ENFILE) {
-            i.msg().write_status(Qnx::QENFILE);
-            return;
-        } else {
-            throw std::system_error(errno, std::generic_category());
+    int fd = msg.m_fd;
+    if (fd == 0) {
+        /* Locate a free descriptor by doing open */
+        fd = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
+        if (fd < 0) {
+            if (errno == EMFILE){
+                i.msg().write_status(Qnx::QEMFILE);
+                return;
+            } else if (errno == ENFILE) {
+                i.msg().write_status(Qnx::QENFILE);
+                return;
+            } else {
+                throw std::system_error(errno, std::generic_category());
+            }
         }
     }
 
@@ -224,25 +247,23 @@ void MainHandler::proc_fd_attach(MsgInfo& i)
 }
 
 void MainHandler::proc_fd_detach(MsgInfo& i) {
-    /* QNX first closes the FD with iomgr, then detaches it. We ignore the close, instead close on detach */
-    QnxMsg::proc::fd_request fd;
-    i.msg().read_type(&fd);
+    /* We do not do reservations */
+    i.msg().write_status(Qnx::QEOK);
+}
 
-    auto fdi = i.ctx().proc()->fd_get(fd.m_fd);
+void MainHandler::proc_fd_query(MsgInfo& i) {
+    QnxMsg::proc::fd_request msg;
+    i.msg().read_type(&msg);
 
-    int r;
-    if (fdi->m_dir) {
-        r = closedir(fdi->m_dir);
-    } else {
-        r = close(fd.m_fd);
-    }
-
-    i.ctx().proc()->fd_release(fd.m_fd);
-    if (r < 0) {
-        i.msg().write_status(Emu::map_errno(errno));
-    } else {
-        i.msg().write_status(0);
-    }
+    QnxMsg::proc::fd_query_reply reply;
+    memset(&reply, 0, sizeof(reply));
+    reply.m_status = 0;
+    reply.m_info.m_handle = 0;
+    reply.m_info.m_pid = 1;
+    reply.m_info.m_vid = reply.m_info.m_pid;
+    reply.m_info.m_nid = 0;
+    reply.m_fd = msg.m_fd;
+    i.msg().write_type(0, &reply);
 }
 
 void MainHandler::proc_segment_alloc(MsgInfo& i)
@@ -345,18 +366,29 @@ void MainHandler::proc_sigtab(MsgInfo &i) {
 void MainHandler::proc_sigact(MsgInfo &i) {
     QnxMsg::proc::signal_request msg;
     i.msg().read_type(&msg);
+
+    QnxMsg::proc::signal_reply reply;
+    memset(&reply, 0, sizeof(reply));
     int r = i.ctx().proc()->m_emu.signal_sigact(msg.m_signum, msg.m_offset, msg.m_mask);
-    i.msg().write_status(r);
+    if (r < 0) {
+        reply.m_status = Emu::map_errno(r);
+    } else {
+        reply.m_status = Qnx::QEOK;
+    }
+    i.msg().write_type(0, &reply);
 }
 
 void MainHandler::proc_sigmask(MsgInfo &i) {
     QnxMsg::proc::signal_request msg;
     i.msg().read_type(&msg);
 
-    msg.m_mask = (msg.m_mask & ~msg.m_bits) | msg.m_bits;
-
-    int r = i.ctx().proc()->m_emu.signal_sigact(msg.m_signum, msg.m_offset, msg.m_mask);
-    i.msg().write_status(r);
+    QnxMsg::proc::signal_reply reply;
+    memset(&reply, 0, sizeof(reply));
+    auto emu = &i.ctx().proc()->m_emu;
+    reply.m_old_bits = emu->signal_getmask();
+    emu->signal_mask(msg.m_mask, msg.m_bits);
+    reply.m_new_bits = emu->signal_getmask();
+    i.msg().write_type(0, &reply);
 }
 
 void MainHandler::proc_getid(MsgInfo &i) {
@@ -372,7 +404,50 @@ void MainHandler::proc_getid(MsgInfo &i) {
     msg.m_ruid = getuid();
     msg.m_euid = geteuid();
     i.msg().write_type(0, &msg);
+}
 
+void MainHandler::proc_osinfo(MsgInfo &i) {
+    auto proc = Process::current();
+    Qnx::osinfo osinfo;
+    memset(&osinfo, 0, sizeof(osinfo));
+    osinfo.cpu = 486;
+    osinfo.fpu = 487;
+    osinfo.cpu_speed = 960;
+    osinfo.nodename = proc->nid();
+    strcpy(osinfo.machine, "Qine");
+    i.msg().write_status(Qnx::QEOK);
+    i.msg().write_type(2, &osinfo);
+}
+
+uint32_t MainHandler::map_file_flags_to_host(uint32_t oflag) {
+    uint32_t mapped_oflags = 0;
+    if (oflag & Qnx::QO_WRONLY)
+        mapped_oflags |= O_WRONLY;
+    
+    if (oflag & Qnx::QO_RDWR)
+        mapped_oflags |= O_RDWR;
+
+    if (oflag & Qnx::QO_APPEND)
+        mapped_oflags |= O_APPEND;
+
+    if (oflag & Qnx::QO_CREAT)
+        mapped_oflags |= O_CREAT;
+    
+    if (oflag & Qnx::QO_TRUNC)
+        mapped_oflags |= O_TRUNC;
+
+    if (oflag & Qnx::QO_NOCTTY)
+        mapped_oflags |= O_NOCTTY;
+    
+    if (oflag & Qnx::QO_EXCL)
+        mapped_oflags |= O_EXCL;
+
+    if (oflag & Qnx::QO_SYNC)
+        mapped_oflags |= O_SYNC;
+
+    if (oflag & Qnx::QO_DSYNC)
+        mapped_oflags |= O_DSYNC;
+    return mapped_oflags;
 }
 
 void MainHandler::io_open(MsgInfo& i) {
@@ -383,20 +458,7 @@ void MainHandler::io_open(MsgInfo& i) {
     int oflag = msg.m_oflag;
     int eflags = msg.m_eflag;
     if (msg.m_type == QnxMsg::io::msg_io_open::TYPE) {
-        if (oflag & Qnx::QO_WRONLY)
-            mapped_oflags |= O_WRONLY;
-        
-        if (oflag & Qnx::QO_RDWR)
-            mapped_oflags |= O_RDWR;
-
-        if (oflag & Qnx::QO_APPEND)
-            mapped_oflags |= O_APPEND;
-
-        if (oflag & Qnx::QO_CREAT)
-            mapped_oflags |= O_CREAT;
-        
-        if (oflag & Qnx::QO_TRUNC)
-            mapped_oflags |= O_TRUNC;
+        mapped_oflags = map_file_flags_to_host(oflag);
     } else if (msg.m_type == QnxMsg::io::msg_handle::TYPE) {
         if (msg.m_oflag == Qnx::IO_HNDL_RDDIR) {
             mapped_oflags |= O_DIRECTORY;
@@ -414,14 +476,17 @@ void MainHandler::io_open(MsgInfo& i) {
         msg.m_type = 0;
     }
 
-    int r = dup2(fd, msg.m_fd);
-    
-    if (r < 0) {
-        i.msg().write_status(Emu::map_errno(errno));
-        return;
+    if (fd != msg.m_fd) {
+        // move fd to final location
+        int r = dup2(fd, msg.m_fd);
+        if (r < 0) {
+            i.msg().write_status(Emu::map_errno(errno));
+            return;
+        }
+        close(fd);
     }
-    close(fd);
-    i.msg().write_type(0, &msg);
+
+    i.msg().write_status(Qnx::QEOK);
 }
 
 void MainHandler::io_stat(MsgInfo& i) {
@@ -538,8 +603,24 @@ void MainHandler::transfer_stat(QnxMsg::io::stat& dst, struct stat& src) {
 }
 
 void MainHandler::io_close(MsgInfo& i) {
-    // wait for detach
-    i.msg().write_status(0);
+    QnxMsg::io::close_request msg;
+    i.msg().read_type(&msg);
+
+    auto fdi = i.ctx().proc()->fd_get(msg.m_fd);
+
+    int r;
+    if (fdi->m_dir) {
+        r = closedir(fdi->m_dir);
+    } else {
+        r = close(msg.m_fd);
+    }
+
+    i.ctx().proc()->fd_release(msg.m_fd);
+    if (r < 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+    } else {
+        i.msg().write_status(0);
+    }
 }
 
 void MainHandler::io_lseek(MsgInfo &i) {
@@ -603,6 +684,87 @@ void MainHandler::io_write(MsgInfo &i) {
     i.msg().write_type(0, &reply);
 }
 
+void MainHandler::io_fcntl_flags(MsgInfo &i) {
+    QnxMsg::io::fcntl_flags_request msg;
+    i.msg().read_type(&msg);
+
+    QnxMsg::io::fcntl_flags_reply reply;
+    memset(&msg, 0, sizeof(reply));
+
+    int r = fcntl(msg.m_fd, F_GETFL);
+    if (r < 0) {
+        reply.m_status = Emu::map_errno(errno);
+        i.msg().write_type(0, &reply);
+        return;
+    }
+
+    if (msg.m_mask != 0) {
+        // update flags
+        uint32_t mask_flags = map_file_flags_to_host(msg.m_mask);
+        uint32_t set_flags = map_file_flags_to_host(msg.m_bits);
+
+        r = (r & ~mask_flags) | set_flags;
+
+        r = fcntl(msg.m_fd, F_SETFL);
+        if (r < 0) {
+            reply.m_status = Emu::map_errno(errno);
+            i.msg().write_type(0, &reply);
+            return;
+        }
+
+        int r = fcntl(msg.m_fd, F_GETFL);
+        if (r < 0) {
+            reply.m_status = Emu::map_errno(errno);
+            i.msg().write_type(0, &reply);
+            return;
+        }
+    }
+
+    reply.m_status = Qnx::QEOK;
+    reply.m_flags = 0;
+
+    if (r & O_WRONLY)
+        reply.m_flags |= Qnx::QO_WRONLY;
+    
+    if (r & O_RDWR)
+        reply.m_flags |= Qnx::QO_RDWR;
+
+    if (r & O_APPEND)
+        reply.m_flags |= Qnx::QO_APPEND;
+
+    if (r & O_CREAT)
+        reply.m_flags |= Qnx::QO_CREAT;
+    
+    if (r & O_TRUNC)
+        reply.m_flags |= Qnx::QO_TRUNC;
+
+    if (r & O_NOCTTY)
+        reply.m_flags |= Qnx::QO_NOCTTY;
+    
+    if (r & O_EXCL)
+        reply.m_flags |= Qnx::QO_EXCL;
+
+    if (r & O_SYNC)
+        reply.m_flags |= Qnx::QO_SYNC;
+
+    if (r & O_DSYNC)
+        reply.m_flags |= Qnx::QO_DSYNC;
+
+    i.msg().write_type(0, &reply);
+}
+
+void MainHandler::io_dup(MsgInfo &i) {
+    QnxMsg::io::dup_request msg;
+    i.msg().read_type(&msg);
+
+    int r = dup2(msg.m_src_fd, msg.m_dst_fd);
+    if (r < 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+    } else {
+        i.msg().write_status(Qnx::QEOK);
+    }
+}
+
 void MainHandler::fsys_unlink(MsgInfo &i) {
     QnxMsg::common::open msg;
     i.msg().read_type(&msg);
@@ -615,5 +777,58 @@ void MainHandler::dev_tcgetattr(MsgInfo &i) {
     QnxMsg::dev::tcgetattr_request msg;
     i.msg().read_type(&msg);
 
-    i.msg().write_status(Qnx::QENOTTY);
+    QnxMsg::dev::tcgetattr_reply reply;
+    memset(&reply, 0, sizeof(reply));
+
+    struct termios attr;
+    int r = tcgetattr(i.m_fd, &attr);
+    if (r < 0) {
+        reply.m_status = Emu::map_errno(errno);
+        i.msg().write_type(0, &reply);
+        return;
+    }
+
+    // TODO: do a real translate
+    reply.m_status = Qnx::QEOK;
+    for(size_t i = 0; i < std::min(NCCS, Qnx::QNCCS); i++) {
+        reply.m_state.m_c_cc[i] = attr.c_cc[i];
+    }
+    reply.m_state.m_c_ispeed = attr.c_ispeed;
+    reply.m_state.m_c_ospeed = attr.c_ospeed;
+    reply.m_state.m_c_line = attr.c_line;
+    reply.m_state.m_cflag = attr.c_cflag;
+    reply.m_state.m_iflag = attr.c_iflag;
+    reply.m_state.m_lflag = attr.c_lflag;
+    reply.m_state.m_oflag = attr.c_oflag;
+
+    i.msg().write_type(0, &reply);
+}
+
+void MainHandler::dev_tcsetattr(MsgInfo &i) {
+    QnxMsg::dev::tcsetattr_request msg;
+    i.msg().read_type(&msg);
+
+    struct termios attr;
+
+    // TODO: do a real translate
+
+    for(size_t i = 0; i < std::min(NCCS, Qnx::QNCCS); i++) {
+        attr.c_cc[i] = msg.m_state.m_c_cc[i];
+    }
+    attr.c_ispeed = msg.m_state.m_c_ispeed;
+    attr.c_ospeed = msg.m_state.m_c_ospeed;
+    attr.c_line = msg.m_state.m_c_line;
+    attr.c_cflag = msg.m_state.m_cflag;
+    attr.c_iflag = msg.m_state.m_iflag;
+    attr.c_lflag = msg.m_state.m_lflag;
+    attr.c_oflag = msg.m_state.m_oflag;
+
+    //int r = tcsetattr(i.m_fd, msg.m_optional_actions, &attr);
+    int r = 0;
+    if (r < 0) {
+        i.msg().write_status(Emu::map_errno(Qnx::QEOK));
+    } else {
+        i.msg().write_status(Emu::map_errno(Qnx::QEOK));
+    }
+    
 }

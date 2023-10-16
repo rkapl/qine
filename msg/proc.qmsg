@@ -97,6 +97,16 @@ struct fd_reply1 {
     padd: u16;
 }
 
+struct fd_entry {
+    nid: nid;
+    pid: pid;
+    padd: u16;
+    vid: pid;
+    padd: u16;
+    handle: u16;
+    flags: u16;
+}
+
 msg fd_attach {
     type: 22;
     subtype: 0;
@@ -111,6 +121,18 @@ msg fd_detach {
 
     request fd_request;
     reply fd_reply1;
+}
+
+msg fd_query {
+    type: 22;
+    subtype: 2;
+
+    request fd_request;
+    reply {
+        status: u16;
+        info: fd_entry;
+        fd: u16;
+    }
 }
 
 msg vc_detach {
@@ -220,5 +242,14 @@ msg getid {
         ruid: u16;
         egid: u16;
         euid: u16;
+    }
+}
+
+msg osinfo {
+    type: 23;
+    request {}
+    reply {
+        status: u16;
+        # osinfo structure goes here
     }
 }

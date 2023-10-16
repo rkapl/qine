@@ -158,3 +158,30 @@ msg rewinddir {
           status: u16;
      }
 }
+
+msg fcntl_flags {
+     type: 0x010E;
+     request {
+          fd: u16;
+          mask: u16;
+          bits: u16;
+     }
+     reply {
+          status: u16;
+          flags: u16;
+     }
+}
+
+msg dup {
+     type: 0x108;
+     request {
+          src_fd: u16;
+          src_pid: pid;
+          padd: u16;
+          dst_fd: u16;
+          padd: u16;
+     }
+     reply {
+          status: u16;
+     }
+}
