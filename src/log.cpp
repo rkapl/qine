@@ -36,5 +36,8 @@ Log::Category Log::by_name(const char *name) {
     if (strcmp(name, "loader") == 0) {
         return LOADER;
     }
+    if (strcmp(name, "sig") == 0) {
+        return SIG;
+    }
     return Category::INVALID;
 }

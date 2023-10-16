@@ -15,7 +15,7 @@ public:
         LOADER,
         MAIN,
         UNHANDLED,
-        SIGNAL,
+        SIG,
     };
 
     static void print(Category c, const char *format, ...) __attribute__((format(printf, 2, 3)));

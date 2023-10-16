@@ -26,6 +26,8 @@ private:
     void proc_psinfo(MsgInfo &i);
     void proc_sigtab(MsgInfo &i);
     void proc_sigact(MsgInfo &i);
+    void proc_getid(MsgInfo &i);
+    void proc_sigmask(MsgInfo &i);
 
     void io_open(MsgInfo &i);
     void io_stat(MsgInfo &i);

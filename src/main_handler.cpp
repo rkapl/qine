@@ -97,8 +97,25 @@ void MainHandler::receive(MsgInfo& i) {
                 case QnxMsg::proc::msg_sigact::SUBTYPE:
                     proc_sigact(i);
                     break;
+                case QnxMsg::proc::msg_sigmask::SUBTYPE:
+                    proc_sigmask(i);
+                    break;
+                default:
+                    unhandled_msg();
+                    break;
             }; 
             break;
+        case QnxMsg::proc::msg_getid::TYPE: {
+            switch (hdr.subtype) {
+                case QnxMsg::proc::msg_getid::SUBTYPE:
+                    proc_getid(i);
+                    break;
+                default:
+                    unhandled_msg();
+                    break;
+            }
+        };
+        break;
 
         case QnxMsg::io::msg_handle::TYPE:
         case QnxMsg::io::msg_io_open::TYPE:
@@ -303,8 +320,10 @@ void MainHandler::proc_psinfo(MsgInfo &i)
     Qnx::psinfo ps;
     memset(&ps, 0, sizeof(ps));
     ps.pid = proc->pid();
-    ps.egid = getgid();
-    ps.euid = getuid();
+    ps.rgid = getgid();
+    ps.ruid = getuid();
+    ps.egid = getegid();
+    ps.euid = geteuid();
     ps.proc.father = proc->parent_pid();
 
     strlcpy(ps.proc.name, proc->file_name().c_str(), sizeof(ps.proc.name));
@@ -328,6 +347,32 @@ void MainHandler::proc_sigact(MsgInfo &i) {
     i.msg().read_type(&msg);
     int r = i.ctx().proc()->m_emu.signal_sigact(msg.m_signum, msg.m_offset, msg.m_mask);
     i.msg().write_status(r);
+}
+
+void MainHandler::proc_sigmask(MsgInfo &i) {
+    QnxMsg::proc::signal_request msg;
+    i.msg().read_type(&msg);
+
+    msg.m_mask = (msg.m_mask & ~msg.m_bits) | msg.m_bits;
+
+    int r = i.ctx().proc()->m_emu.signal_sigact(msg.m_signum, msg.m_offset, msg.m_mask);
+    i.msg().write_status(r);
+}
+
+void MainHandler::proc_getid(MsgInfo &i) {
+    auto proc = Process::current();
+    QnxMsg::proc::getid_reply msg;
+    memset(&msg, 0, sizeof(msg));
+    //msg.m_status = Qnx::QEOK;
+    msg.m_pid = proc->pid();
+    msg.m_ppid = proc->parent_pid();
+    msg.m_pid_group = proc->pid();
+    msg.m_rgid = getgid();
+    msg.m_egid = getegid();
+    msg.m_ruid = getuid();
+    msg.m_euid = geteuid();
+    i.msg().write_type(0, &msg);
+
 }
 
 void MainHandler::io_open(MsgInfo& i) {

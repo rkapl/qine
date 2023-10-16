@@ -105,6 +105,7 @@ qine_no_tls void Emu::handler_generic(int sig, siginfo_t *info, void *uctx_void)
 
     int qnx_sig = map_sig_host_to_qnx(sig);
     if (qnx_sig == -1) {
+        // not async safe, but we are screwed anyway
         throw GuestStateException("Received signal, it is registered, but not QNX signal.");
     }
 
@@ -120,7 +121,9 @@ qine_no_tls void Emu::handler_generic(int sig, siginfo_t *info, void *uctx_void)
  * for setting up QNX signal state if there is a pending signal.
  */
 void Emu::signal_tail(Context& ctx) {
-    if (m_sigpend == 0)
+    auto activesig = (~m_sigmask) & m_sigpend;
+
+    if (activesig == 0)
         return;
 
     if ((ctx.reg_cs() & SegmentDescriptor::SEL_LDT) == 0) {
@@ -129,20 +132,21 @@ void Emu::signal_tail(Context& ctx) {
     }
 
     /* Find and pop the signal */
+    
     int qnx_sig;
     for (qnx_sig = 0; qnx_sig < Qnx::QSIG_COUNT; qnx_sig++) {
-        if (m_sigpend & (1u << qnx_sig))
+        if (activesig & (1u << qnx_sig))
             break;
     }
     m_sigpend &= ~(1u << qnx_sig);
     
+    /* Find it */
     auto proc = ctx.proc();
     if (!proc->m_sigtab) {
         ctx.dump(stdout);
         debug_hook();
         throw GuestStateException("Received signal, but no sigtab registered by guest.");
     }
-
 
     auto act = &proc->m_sigtab->actions[qnx_sig];
     if (act->handler_fn == Qnx::QSIG_DFL || act->handler_fn == Qnx::QSIG_ERR || act->handler_fn == Qnx::QSIG_HOLD) {
@@ -169,7 +173,7 @@ void Emu::signal_tail(Context& ctx) {
 
     ctx.reg_cs() = proc->m_load.entry_main->m_segment;
     ctx.reg_eip() = proc->m_sigtab->sigstub;
-    Log::print(Log::SIGNAL, "raised signal %d\n", qnx_sig);
+    Log::print(Log::SIG, "raised signal %d\n", qnx_sig);
 }
 
 void Emu::syscall_sigreturn(Context &ctx)
@@ -337,7 +341,7 @@ int Emu::signal_sigact(int qnx_sig, uint32_t handler, uint32_t mask)
 
     struct sigaction sa = {0};
     sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
-    sa.sa_mask = map_sigmask_qnx_to_host(mask);
+    sigfillset(&sa.sa_mask);
     
     if (handler == Qnx::QSIG_DFL) {
         sa.sa_handler = SIG_DFL;
@@ -356,6 +360,7 @@ int Emu::signal_sigact(int qnx_sig, uint32_t handler, uint32_t mask)
         return map_errno(r);
     }
 
+    Log::print(Log::SIG, "Registered signal %d, handler %x\n", qnx_sig, handler);   
     auto si = &sigtab->actions[qnx_sig];
     si->flags = 0;
     si->handler_fn = handler;

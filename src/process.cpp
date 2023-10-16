@@ -261,6 +261,11 @@ void Process::setup_startup_context(int argc, char **argv)
     /* Environment */
     ctx.push_stack(0);
 
+    auto push_env = [&](const char *c) {
+        alloc.push_string(c);    
+        ctx.push_stack(alloc.offset());
+    };
+
     std::string cwd_env("__CWD=");
     cwd_env.append(cpp_getcwd());
     alloc.push_string(cwd_env.c_str());

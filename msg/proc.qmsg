@@ -198,3 +198,27 @@ msg sigsuspend {
     request signal_request;
     reply signal_reply;
 }
+
+msg getid {
+    type: 12;
+    subtype: 0x0;
+    request {}
+    reply {
+        status: u16;
+        # not clear, guessed by results
+        padd: u16;
+        padd: u16;
+
+        # from here it is psinfo3
+        pid: u16;
+        padd: u16;
+        ppid: u16;
+        pid_group:u16;
+        padd: u16;
+        flags: u32;
+        rgid: u16;
+        ruid: u16;
+        egid: u16;
+        euid: u16;
+    }
+}
