@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <string.h>
 
+#include "compiler.h"
 #include "emu.h"
 #include "gen_msg/io.h"
 #include "log.h"
@@ -55,11 +56,11 @@ qine_no_tls void Emu::static_handler_segv(int sig, siginfo_t *info, void *uctx_v
 
 qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
 {
+    ExtraContext ectx;
+    ectx.from_cpu();
     m_tls_fixup.restore();
 
     // now we have normal C environment
-    ExtraContext ectx;
-    ectx.from_cpu();
     auto ctx = Context(reinterpret_cast<ucontext_t*>(uctx_void), &ectx);
     if ((ctx.reg_cs() & SegmentDescriptor::SEL_LDT) == 0) {
         debug_hook();
@@ -83,7 +84,7 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
     }
     
     if (!handled) {
-        raise(Qnx::QSIGSEGV);
+        signal_raise(Qnx::QSIGSEGV);
     }
 
     signal_tail(ctx);
@@ -95,11 +96,11 @@ qine_no_tls void Emu::static_handler_generic(int sig, siginfo_t *info, void *uct
 }
 
 qine_no_tls void Emu::handler_generic(int sig, siginfo_t *info, void *uctx_void) {
-    m_tls_fixup.restore();
-
-    // now we have normal C environment
     ExtraContext ectx;
     ectx.from_cpu();
+    m_tls_fixup.restore();
+    
+    // now we have normal C environment
     auto ctx = Context(reinterpret_cast<ucontext_t*>(uctx_void), &ectx);
 
 
@@ -284,7 +285,7 @@ uint32_t Emu::signal_getmask() {
 void Emu::debug_hook() {
 }
 
-void Emu::static_handler_user(int sig, siginfo_t *info, void *uctx)
+qine_no_tls void Emu::static_handler_user(int sig, siginfo_t *info, void *uctx)
 {
     ExtraContext ectx;
     ectx.from_cpu();
@@ -311,8 +312,9 @@ void Emu::static_handler_user(int sig, siginfo_t *info, void *uctx)
     SYNC(edi);
     #undef SYNC
 
-    ectx.to_cpu();
     Log::print(Log::MAIN, "Entering emulation\n");
+
+    ectx.to_cpu();
 }
 
 void Emu::enter_emu() {
