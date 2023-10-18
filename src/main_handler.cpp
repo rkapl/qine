@@ -1,11 +1,10 @@
-
-#include <bits/types/struct_timespec.h>
+#include <csignal>
 #include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <ctime>
+#include <cstdlib>
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <iterator>
 #include <stdint.h>
 #include <ios>
 #include <limits>
@@ -19,12 +18,14 @@
 #include <sys/types.h>
 #include <sys/ucontext.h>
 #include <sys/uio.h>
+#include <sys/wait.h>
 #include <termios.h>
 
 #include "gen_msg/common.h"
 #include "gen_msg/dev.h"
 #include "gen_msg/fsys.h"
 #include "mem_ops.h"
+#include "msg.h"
 #include "msg/meta.h"
 #include "process.h"
 #include "msg_handler.h"
@@ -36,10 +37,12 @@
 #include "qnx/procenv.h"
 #include "qnx/psinfo.h"
 #include "qnx/types.h"
+#include "segment_descriptor.h"
 #include "types.h"
 #include "log.h"
 #include <gen_msg/proc.h>
 #include <gen_msg/io.h>
+#include <vector>
 
 
 void MainHandler::receive(MsgInfo& i) {
@@ -124,6 +127,18 @@ void MainHandler::receive(MsgInfo& i) {
         break;
         case QnxMsg::proc::msg_osinfo::TYPE:
             proc_osinfo(i);
+            break;
+        case QnxMsg::proc::msg_spawn::TYPE:
+            proc_spawn(i);
+            break;
+        case QnxMsg::proc::msg_fork::TYPE:
+            proc_fork(i);
+            break;
+        case QnxMsg::proc::msg_exec::TYPE:
+            proc_exec(i);
+            break;
+        case QnxMsg::proc::msg_wait::TYPE:
+            proc_wait(i);
             break;
 
         case QnxMsg::io::msg_handle::TYPE:
@@ -414,9 +429,177 @@ void MainHandler::proc_osinfo(MsgInfo &i) {
     osinfo.fpu = 487;
     osinfo.cpu_speed = 960;
     osinfo.nodename = proc->nid();
+
+    osinfo.ssinfo_sel = SegmentDescriptor::mk_invalid_sel(0);
+    osinfo.disksel = SegmentDescriptor::mk_invalid_sel(1);
+    osinfo.machinesel = SegmentDescriptor::mk_invalid_sel(2);
+    osinfo.timesel = SegmentDescriptor::mk_sel(proc->m_time_segment_selector);
+
     strcpy(osinfo.machine, "Qine");
     i.msg().write_status(Qnx::QEOK);
     i.msg().write_type(2, &osinfo);
+}
+
+void MainHandler::proc_fork(MsgInfo &i) {
+    QnxMsg::proc::loaded_reply reply;
+    clear(&reply);
+
+    pid_t r = fork();
+    if (r < 0) {
+        reply.m_status = Emu::map_errno(errno);
+    } else {
+        if (r == 0) {
+            reply.m_son_pid = 0;
+        } else {
+            reply.m_son_pid = Process::child_pid();
+        }
+        reply.m_status = Qnx::QEOK;
+    }
+    i.msg().write_type(0, &reply);
+}
+
+void MainHandler::proc_spawn(MsgInfo &i) {
+    QnxMsg::proc::loaded_reply reply;
+    clear(&reply);
+
+    pid_t r = fork();
+    if (r < 0 ) {
+        reply.m_status = Emu::map_errno(errno);
+    } else if (r == 0) {
+        proc_exec_common(i);
+        exit(255);
+    } else {
+        reply.m_son_pid = Process::child_pid();
+        reply.m_status = Qnx::QEOK;
+    }
+    i.msg().write_type(0, &reply);
+}
+
+void MainHandler::proc_exec(MsgInfo &i) {
+    QnxMsg::proc::loaded_reply reply;
+    clear(&reply);
+
+    proc_exec_common(i);
+    reply.m_status = Emu::map_errno(errno);
+    i.msg().write_type(0, &reply);
+}
+
+void MainHandler::proc_exec_common(MsgInfo &i) {
+    QnxMsg::proc::spawn msg;
+    i.msg().read_type(&msg);
+    MsgStreamReader r(&i.msg(), sizeof(QnxMsg::proc::spawn));
+
+    // copy into an owned buf and remember offsets
+    std::vector<char> buf;
+    std::vector<size_t > argvo;
+    std::vector<size_t > envo;
+
+    auto read_string = [&buf, &r]() {
+        size_t len = 0;
+        char c = r.get(); 
+        while (c) {
+            buf.push_back(c);
+            len++;
+            c = r.get();
+        }
+        buf.push_back(0);
+        return len;
+    };
+
+    size_t len;
+
+    size_t exec_path_o = buf.size();
+    len = read_string();
+
+    argvo.push_back(buf.size());
+    len = read_string();
+    while (len != 0) {
+        argvo.push_back(buf.size());
+        len = read_string();
+    }
+
+    envo.push_back(buf.size());
+    len = read_string();
+    while (len != 0) {
+        envo.push_back(buf.size());
+        len = read_string();
+    }
+
+    // now that the buf is ready, convert offsets into pointers
+    std::vector<const char*> argvp;
+    std::vector<const char*> envp;
+    for (auto o: argvo) {
+        argvp.push_back(&buf[o]);
+    }
+    for (auto o: envo) {
+        envp.push_back(&buf[o]);
+    }
+    argvp.erase(argvp.end() - 1);
+    envp.erase(envp.end() - 1);
+
+    // remove prefix, doe not handle malformed ones
+    // TODO: pass argv[0] and exec path to qine separately
+    const char *f = &buf[exec_path_o];
+    if (f[0] == '/' && f[1] == '/') {
+        f += 2;
+        while (isalnum(f[0]))
+            f++;
+    }
+    argvp[0] = f;
+
+    // combine qine args and our args
+    std::vector<const char*> final_argv;
+    for (const auto& a: i.ctx().proc()->self_call()) {
+        final_argv.push_back(a.c_str());
+    }
+
+    //final_argv.push_back("--");
+    
+    for (auto p: argvp) {
+        final_argv.push_back(p);
+    }
+    final_argv.push_back(nullptr);
+
+    // fixup envp
+    const char *qnx_root = getenv("QNX_ROOT");
+    std::string root_env;
+    if (qnx_root) {
+        root_env = "QNX_ROOT=";
+        root_env.append(qnx_root);
+        envp.push_back(root_env.c_str());
+    }
+    envp.push_back(nullptr);
+
+     for (auto o: final_argv) {
+        //printf("Arg: %s\n", o);
+    }
+    for (auto o: envp) {
+        //printf("Env %s\n", o);
+    }
+
+    //printf("Exec: %s\n", f);
+    execve(final_argv[0], const_cast<char**>(final_argv.data()), const_cast<char**>(envp.data()));
+    exit(255);
+}
+
+void MainHandler::proc_wait(MsgInfo &i) {
+    QnxMsg::proc::wait_request msg;
+    i.msg().read_type(&msg);
+
+    QnxMsg::proc::wait_reply reply;
+    clear(&reply);
+    // TODO: once we get PID remap, call the real deal
+    int status;
+    pid_t pid = wait(&status);
+
+    if (pid < 0) {
+        reply.m_status = Emu::map_errno(errno);
+    } else {
+        reply.m_status = Qnx::QEOK;
+        reply.m_xstatus = status;
+        reply.m_pid = Process::child_pid();
+    }
+    i.msg().write_type(0, &reply);
 }
 
 uint32_t MainHandler::map_file_flags_to_host(uint32_t oflag) {

@@ -1,5 +1,67 @@
 include common : open;
 
+struct spawn {
+    type: u16;
+    priority: u8;
+    algorithm: u8;
+    padd: u16;
+    flags: u16;
+    padd: u8;
+    ctfd: u8;
+    stdfds: stdfds;
+    argc: u16;
+    envc: u16;
+    # argc and envc data follow, not yet clear in which format
+}
+
+struct loaded_reply {
+    status: u16;
+    son_pid: pid;
+    padd: u16;
+}
+
+msg spawn {
+    type: 3;
+
+    request spawn;
+    reply loaded_reply;
+}
+
+msg exec {
+    type: 4;
+
+    request spawn;
+    reply loaded_reply;
+}
+
+msg fork {
+    type: 5;
+
+    request {
+        flags: u16;
+    }
+    reply loaded_reply;
+}
+
+msg wait {
+    type: 27;
+
+    request {
+        options: u16;
+        pid: pid;
+        padd: u16;
+        xstatus: u32;
+    }
+
+    reply {
+        status: u16;
+        padd: u16;
+        pid: pid;
+        padd: u16;
+        xstatus: u32;
+    }
+}
+
 struct segment_request {
     type: u16;
     subtype: u16;

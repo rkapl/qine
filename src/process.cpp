@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <asm-generic/errno-base.h>
 #include <asm-generic/errno.h>
 #include <bits/types/FILE.h>
@@ -11,6 +12,7 @@
 #include <string>
 #include <sys/ucontext.h>
 #include <system_error>
+#include <vector>
 
 #include "gen_msg/dev.h"
 #include "gen_msg/fsys.h"
@@ -46,9 +48,10 @@ Process::Process():
 
 Process::~Process() {}
 
-void Process::initialize() {
+void Process::initialize(std::vector<std::string>&& self_call) {
     assert(!m_current);
     m_current = new Process();
+    m_current->m_self_call = std::move(self_call);
     m_current->m_startup_context = Context(&m_current->m_startup_context_main, &m_current->m_startup_context_extra);
     memset(&m_current->m_startup_context_main, 0xcc, sizeof(m_current->m_startup_context_main));
     memset(&m_current->m_startup_context_extra, 0xcc, sizeof(m_current->m_startup_context_extra));
@@ -70,8 +73,16 @@ Qnx::pid_t Process::nid() const
     return 0x1;
 }
 
+Qnx::pid_t Process::child_pid() {
+    return 0x1003;
+}
+
 const std::string& Process::file_name() const {
     return m_file_name;
+}
+
+const std::vector<std::string>& Process::self_call() const {
+    return m_self_call;
 }
 
 void Process::enter_emu()
@@ -249,8 +260,14 @@ void Process::setup_startup_context(int argc, char **argv)
 
     auto data_seg = data_sd->segment();
     auto alloc = SegmentAllocator(data_seg.get());
-
     setup_magic(data_sd, alloc);
+
+    /* Create time segment so that we do not crash, but we do not fill the time yet */
+    m_time_segment = allocate_segment();
+    m_time_segment->reserve(MemOps::PAGE_SIZE);
+    m_time_segment->grow(Access::READ_ONLY, MemOps::PAGE_SIZE);
+    m_time_segment->set_limit(0x20);
+    m_time_segment_selector = m_segment_descriptors.alloc()->id();
 
     /* Now create the stack environment, that is argc, argv, arge  */
     ctx.push_stack(0); // Unknown

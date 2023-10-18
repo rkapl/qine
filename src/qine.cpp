@@ -1,9 +1,8 @@
-#include <cstdio>
-#include <cstdlib>
 #include <stdlib.h>
 #include <string>
 #include <stdio.h>
 #include <getopt.h>
+#include <vector>
 
 #include "process.h"
 #include "loader.h"
@@ -37,7 +36,6 @@ static void handle_help() {
 }
 
 int main(int argc, char **argv) {
-
     for (;;) {
         const char* opts = "d:h";
         int c = getopt_long(argc, argv, opts, cmd_options, NULL);
@@ -60,10 +58,16 @@ int main(int argc, char **argv) {
                 exit(1);
         }
     }
+
+    std::vector<std::string> self_call;
+    for (int i = 0; i < optind; i++) {
+        self_call.push_back(argv[i]);
+    }
+    
     argc -= optind;
     argv += optind;
 
-    Process::initialize();
+    Process::initialize(std::move(self_call));
 
     if (!getenv("QNX_ROOT")) {
         fprintf(stderr, "QNX_ROOT not set\n");

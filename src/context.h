@@ -24,7 +24,7 @@ private:
     uint64_t gsbase;
 };
 
-/* DS, ES, FS and GS are not stored on 64 bit linux, store them here. */
+/* DS, ES, FS and GS are not stored in ucontext on 64 bit linux, store them here. */
 class ExtraContext {
 public:
     void from_cpu();
@@ -32,6 +32,8 @@ public:
 
     uint16_t ds;
     uint16_t es;
+    uint16_t fs;
+    uint16_t gs;
 };
 
 /* Wrapper around ucontext_t with helpers */

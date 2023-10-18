@@ -192,7 +192,7 @@ void TlsFixup::save() {
     r = syscall(SYS_arch_prctl, ARCH_GET_FS, &fsbase);
     if (r < 0)
         throw std::logic_error("arch_prctl failed");
-    r = syscall(SYS_arch_prctl, ARCH_SET_GS, &gsbase);
+    r = syscall(SYS_arch_prctl, ARCH_GET_GS, &gsbase);
     if (r < 0)
         throw std::logic_error("arch_prctl failed");
     #endif

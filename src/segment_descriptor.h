@@ -19,6 +19,7 @@ public:
     static constexpr uint16_t SEL_RPL3 = 3u;
 
     static constexpr uint16_t mk_sel(SegmentId id);
+    static constexpr uint16_t mk_invalid_sel(int id);
     static constexpr SegmentId sel_to_id(uint16_t id);
 
     inline uint16_t id() const;
@@ -55,4 +56,8 @@ uint16_t SegmentDescriptor::id() const {
 
 FarPointer SegmentDescriptor::pointer(uint32_t offset) {
     return FarPointer(selector(), offset);
+}
+
+constexpr uint16_t SegmentDescriptor::mk_invalid_sel(int id) {
+    return 0x100 + (id << 3);
 }

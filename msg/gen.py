@@ -110,6 +110,7 @@ primitive_types = [
     Primitive('path', 'Qnx::PathBuf', 256),
     Primitive('term_cc', 'Qnx::TermCc', 40*2),
     Primitive('time', 'Qnx::Time', 40*2),
+    Primitive('stdfds', 'Qnx::Stdfds', 40*2),
 ]
 
 primitive_type_map = {t.name: t for t in primitive_types}

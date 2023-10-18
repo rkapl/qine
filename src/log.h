@@ -13,7 +13,6 @@ public:
         MSG,
         MSG_REPLY,
         LOADER,
-        MAIN,
         UNHANDLED,
         SIG,
     };

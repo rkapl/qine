@@ -12,6 +12,7 @@ namespace Qnx {
     using PathBuf = char[256 + 100];
     constexpr int QNCCS = 40;
     using TermCc = uint16_t[QNCCS];
+    using Stdfds = uint8_t[10];
     using Time = int32_t;
 }
 
@@ -29,7 +30,7 @@ namespace Meta {
 
     struct Field {
         enum class Format {
-            SUB, U8, U16, U32, I8, I16, I32,  PID, NID, FD, PATH, TERM_CC, TIME
+            SUB, U8, U16, U32, I8, I16, I32,  PID, NID, FD, PATH, TERM_CC, TIME, STDFDS
         };
         enum class Presentation {
             DEFAULT, HEX, OCT

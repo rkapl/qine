@@ -63,6 +63,22 @@ static void print_field(FILE* s, const Meta::Field& f, int indent, size_t offset
             str.append(static_cast<const char*>(v), 256u);
             fprintf(s, "%s", str.c_str());
         }; break;
+        case Meta::Field::Format::STDFDS: {
+            const Qnx::Stdfds *fds = static_cast<const Qnx::Stdfds*>(v);
+            const char *fd_names[] = {"stdin", "stdout", "stderr"};
+            fprintf(s, "{");
+            for (int i = 0; i < 10; i++) {
+                int fd = (*fds)[i];
+                if (fd == 255)
+                    continue;
+                if (i < 2) {
+                    fprintf(s, " %s = %d,", fd_names[i], fd);
+                } else {
+                    fprintf(s, " [%d] = %d,", i, fd);
+                }
+            }
+            fprintf(s, "}");
+        }; break;
         default:
             fprintf(s, "unknown field type");
     }

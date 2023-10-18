@@ -2,6 +2,7 @@
 
 #include "msg.h"
 #include "qnx/types.h"
+#include <cstring>
 
 class Context;
 
@@ -31,4 +32,9 @@ private:
 class MsgHandler {
 public:
     virtual void receive(MsgInfo& msg) = 0;
+
+    template<class T>
+    static void clear(T *msg) {
+        memset(msg, 0, sizeof(*msg));
+    }
 };

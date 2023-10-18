@@ -61,9 +61,17 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
     m_tls_fixup.restore();
 
     // now we have normal C environment
+    debug_hook_sig_enter();
+
+    // unblock the signal, for better debugging and to not let someone inherit it
+    sigset_t ss;
+    sigemptyset(&ss);
+    sigaddset(&ss, SIGSEGV);
+    sigprocmask(SIG_UNBLOCK, &ss, nullptr);
+
     auto ctx = Context(reinterpret_cast<ucontext_t*>(uctx_void), &ectx);
     if ((ctx.reg_cs() & SegmentDescriptor::SEL_LDT) == 0) {
-        debug_hook();
+        debug_hook_problem();
         fprintf(stderr, "Sigsegv in host code\n");
         exit(1);
     }
@@ -145,14 +153,14 @@ void Emu::signal_tail(Context& ctx) {
     auto proc = ctx.proc();
     if (!proc->m_sigtab) {
         ctx.dump(stdout);
-        debug_hook();
+        debug_hook_problem();
         throw GuestStateException("Received signal, but no sigtab registered by guest.");
     }
 
     auto act = &proc->m_sigtab->actions[qnx_sig];
     if (act->handler_fn == Qnx::QSIG_DFL || act->handler_fn == Qnx::QSIG_ERR || act->handler_fn == Qnx::QSIG_HOLD) {
         ctx.dump(stdout);
-        debug_hook();
+        debug_hook_problem();
         throw GuestStateException("Received signal, but handler not registered");
     }
 
@@ -282,7 +290,10 @@ uint32_t Emu::signal_getmask() {
     return m_sigmask;
 }
 
-void Emu::debug_hook() {
+void Emu::debug_hook_problem() {
+}
+
+void Emu::debug_hook_sig_enter() {
 }
 
 qine_no_tls void Emu::static_handler_user(int sig, siginfo_t *info, void *uctx)
@@ -312,7 +323,7 @@ qine_no_tls void Emu::static_handler_user(int sig, siginfo_t *info, void *uctx)
     SYNC(edi);
     #undef SYNC
 
-    Log::print(Log::MAIN, "Entering emulation\n");
+    Log::print(Log::LOADER, "Entering emulation\n");
 
     ectx.to_cpu();
 }
@@ -320,7 +331,7 @@ qine_no_tls void Emu::static_handler_user(int sig, siginfo_t *info, void *uctx)
 void Emu::enter_emu() {
     m_tls_fixup.save();
 
-    struct sigaction sa = {};
+    struct sigaction sa = {0};
     sa.sa_sigaction = Emu::static_handler_segv;
     sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigemptyset(&sa.sa_mask);
@@ -332,7 +343,7 @@ void Emu::enter_emu() {
     sa.sa_sigaction = Emu::static_handler_user;
     sa.sa_flags = SA_SIGINFO | SA_RESETHAND | SA_ONSTACK;
     sigemptyset(&sa.sa_mask);
-    if (sigaction(SIGUSR1, &sa, nullptr)) {
+    if (sigaction(SIGUSR1, &sa, nullptr) == -1) {
         throw std::runtime_error(strerror(errno));
     }
     raise(SIGUSR1);

@@ -27,7 +27,8 @@ public:
     void signal_mask(uint32_t change_mask, uint32_t bits);
     uint32_t signal_getmask();
 
-    static void debug_hook();
+    static void debug_hook_problem();
+    static void debug_hook_sig_enter();
 
     static Qnx::errno_t map_errno(int v);
     

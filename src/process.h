@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <stddef.h>
+#include <string>
 #include <sys/ucontext.h>
 #include <vector>
 #include <memory>
@@ -46,7 +47,7 @@ class Process{
     friend class MainHandler;
 public:
     static inline Process* current();
-    static void initialize();
+    static void initialize(std::vector<std::string>&& self_call);
 
     std::shared_ptr<Segment> allocate_segment();
     SegmentDescriptor* create_segment_descriptor(Access access, const std::shared_ptr<Segment>& mem);
@@ -61,6 +62,11 @@ public:
     Qnx::pid_t pid() const;
     Qnx::pid_t parent_pid() const;
     Qnx::nid_t nid() const;
+
+    const std::vector<std::string>& self_call() const;
+
+    // temporary
+    static Qnx::pid_t child_pid();
     const std::string& file_name() const;
 
     void set_errno(int v);
@@ -97,10 +103,14 @@ private:
     FarPointer m_magic_guest_pointer;
     Qnx::Magic *m_magic;
 
+    std::shared_ptr<Segment> m_time_segment;
+    SegmentId m_time_segment_selector;
+
     Qnx::Sigtab *m_sigtab;
 
     Emu m_emu;
     std::string m_file_name;
+    std::vector<std::string> m_self_call;
 };
 
 Process* Process::current() {

@@ -213,3 +213,12 @@ void Msg::read_iovec(size_t offset, size_t size, std::vector<iovec>& dst) {
 void Msg::write_iovec(size_t offset, size_t size, std::vector<iovec>& dst) {
     common_iovec(iterate_receive(), RwOp::WRITE, offset, size, dst);
 }
+
+void MsgStreamReader::get_more() {
+    auto slice = m_it.next();
+    if (slice.is_empty()) {
+        return;
+    }
+    m_buf = static_cast<const uint8_t*>(m_msg->m_proc->translate_segmented(slice.m_ptr, slice.m_size, RwOp::READ));
+    m_ready = slice.m_size;
+}

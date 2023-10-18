@@ -1,7 +1,10 @@
 #pragma  once
 
 #include "emu.h"
+#include "msg.h"
 #include "msg_handler.h"
+#include "qnx/types.h"
+#include <csignal>
 #include <cstdint>
 #include <sys/stat.h>
 
@@ -31,6 +34,12 @@ private:
     void proc_getid(MsgInfo &i);
     void proc_sigmask(MsgInfo &i);
     void proc_osinfo(MsgInfo &i);
+
+    void proc_fork(MsgInfo &i);
+    void proc_spawn(MsgInfo &i);
+    void proc_exec(MsgInfo &i);
+    void proc_exec_common(MsgInfo &i);
+    void proc_wait(MsgInfo &i);
 
     uint32_t map_file_flags_to_host(uint32_t flags);
 

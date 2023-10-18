@@ -15,6 +15,8 @@
 
 struct iovec;
 
+class MsgStreamReader;
+
 /* 
  * Encapsulates QNX send/reply message. Tries to hide its segmented nature.
  * 
@@ -24,6 +26,7 @@ struct iovec;
  * You can read and write and parts of the message as you need.
  */
 class Msg {
+    friend class MsgStreamReader;
 public:
     Msg(Process *proc, size_t m_send_parts, FarPointer m_send, size_t rcv_parts, FarPointer rcv);
     ~Msg();
@@ -46,6 +49,7 @@ private:
     // Iterates through chunks, mainting position within chunk
     class Iterator {
     friend class Msg;
+    friend class MsgStreamReader;
     public:
         static constexpr size_t no_limit = std::numeric_limits<size_t>::max();
 
@@ -90,6 +94,40 @@ private:
     size_t m_send_parts;
     Qnx::mxfer_entry* m_send;
 };
+
+class MsgStreamReader {
+public:
+    inline MsgStreamReader(Msg *msg, size_t skip = 0);
+    inline char get(char fallback = 0);
+private:
+    void get_more();
+    Msg *m_msg;
+    Msg::Iterator m_it;
+    size_t m_ready;
+    const uint8_t *m_buf;
+};
+
+MsgStreamReader::MsgStreamReader(Msg *msg, size_t skip): 
+    m_msg(msg), m_it(msg->m_send, msg->m_send_parts),
+    m_ready(0), m_buf(nullptr)
+{
+    m_it.skip_to(skip);
+}
+
+char MsgStreamReader::get(char fallback) {
+    if (!m_ready) {
+        get_more();
+    }
+
+    if (!m_ready) {
+        return fallback;
+    }
+
+    m_ready--;
+    char c = *m_buf;
+    m_buf++;
+    return c;
+}
 
 template<class T> void Msg::read_type(T *dst, size_t offset) {
     read(static_cast<void*>(dst), offset, sizeof(T));
