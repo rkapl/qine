@@ -27,7 +27,9 @@ private:
     void proc_fd_attach(MsgInfo &i);
     void proc_fd_detach(MsgInfo &i);
     void proc_fd_query(MsgInfo &i);
+    void proc_fd_action1(MsgInfo &i);
     void proc_vc_detach(MsgInfo &i);
+    void proc_vc_attach(MsgInfo &i);
     void proc_psinfo(MsgInfo &i);
     void proc_sigtab(MsgInfo &i);
     void proc_sigact(MsgInfo &i);
@@ -61,4 +63,5 @@ private:
 
     void dev_tcgetattr(MsgInfo &i);
     void dev_tcsetattr(MsgInfo &i);
+    void dev_term_size(MsgInfo &i);
 };

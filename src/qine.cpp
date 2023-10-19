@@ -24,7 +24,7 @@ static void handle_log_opt(const char *opt) {
 
     Log::Category c = Log::by_name(opt);
     if (c == Log::INVALID) {
-        fprintf(stderr, "Invalid log category: %s", opt);
+        fprintf(stderr, "Invalid log category: %s\n", opt);
         exit(1);
     }
 

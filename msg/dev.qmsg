@@ -32,3 +32,21 @@ msg tcsetattr {
      }
 }
 
+msg term_size {
+     type: 0x0323;
+     request {
+          fd: fd;
+          rows: u16;
+          cols: u16;
+     }
+     reply {
+          status: u16;
+          oldrows: u16;
+          oldcols: u16;
+          
+          padd: u32;
+          padd: u32;
+          padd: u32;
+          padd: u32;
+     }
+}

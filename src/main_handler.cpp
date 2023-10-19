@@ -1,7 +1,4 @@
-#include <csignal>
-#include <cstddef>
-#include <cstdlib>
-#include <ctype.h>
+#include <asm-generic/ioctls.h>
 #include <dirent.h>
 #include <errno.h>
 #include <iterator>
@@ -19,6 +16,7 @@
 #include <sys/ucontext.h>
 #include <sys/uio.h>
 #include <sys/wait.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 
 #include "gen_msg/common.h"
@@ -87,10 +85,16 @@ void MainHandler::receive(MsgInfo& i) {
                 case QnxMsg::proc::msg_fd_query::SUBTYPE:
                     proc_fd_query(i);
                 break;
+                case QnxMsg::proc::msg_fd_action1::SUBTYPE:
+                    proc_fd_action1(i);
+                    break;
                 default:
                     unhandled_msg();
                 break;
             };
+            break;
+        case QnxMsg::proc::msg_vc_attach::TYPE:
+            proc_vc_attach(i);
             break;
         case QnxMsg::proc::msg_vc_detach::TYPE:
             proc_vc_detach(i);
@@ -185,6 +189,9 @@ void MainHandler::receive(MsgInfo& i) {
             break;
         case QnxMsg::dev::msg_tcsetattr::TYPE:
             dev_tcsetattr(i);
+            break;
+        case QnxMsg::dev::msg_term_size::TYPE:
+            dev_term_size(i);
             break;
 
         default:
@@ -281,6 +288,11 @@ void MainHandler::proc_fd_query(MsgInfo& i) {
     i.msg().write_type(0, &reply);
 }
 
+void MainHandler::proc_fd_action1(MsgInfo &i) {
+    // STUB
+    i.msg().write_status(Qnx::QEOK);
+}
+
 void MainHandler::proc_segment_alloc(MsgInfo& i)
 {
     QnxMsg::proc::segment_request msg;
@@ -341,10 +353,35 @@ void MainHandler::proc_open(MsgInfo& i) {
     i.msg().write_type(0, &msg);
 }
 
+void MainHandler::proc_vc_attach(MsgInfo& i) 
+{
+    auto proc = i.ctx().proc();
+    QnxMsg::proc::vc vc;
+    i.msg().read_type(&vc);
+
+    if (vc.m_nid == 0 || vc.m_nid == proc->nid()) {
+        if (vc.m_pid == proc->pid()) {
+            QnxMsg::proc::vc_attach_reply reply;
+            clear(&reply);
+            reply.m_status = Qnx::QEOK;
+            reply.m_pid = vc.m_pid;
+            i.msg().write_type(0, &reply);
+        } else {
+            i.msg().write_status(Qnx::QESRCH);
+        }
+    } else {
+        // networking not supported
+        i.msg().write_status(Qnx::QENOSYS);
+    } 
+}
+
+
 void MainHandler::proc_vc_detach(MsgInfo& i) 
 {
     /* This is stubbed, because QNX/slib seems to have a bug where the stat result
      * overwrites the NID in the message and it then mistakenly calls vc_detach.*/
+
+     /* Also calls to proc_vc_attach succeed on local PID, and then the caller can try to detach it */
     i.msg().write_status(Qnx::QEOK);
 }
 
@@ -1012,6 +1049,37 @@ void MainHandler::dev_tcsetattr(MsgInfo &i) {
         i.msg().write_status(Emu::map_errno(Qnx::QEOK));
     } else {
         i.msg().write_status(Emu::map_errno(Qnx::QEOK));
+    }   
+}
+
+void MainHandler::dev_term_size(MsgInfo &i) {
+    QnxMsg::dev::term_size_request msg;
+    i.msg().read_type(&msg);
+    constexpr uint16_t no_change = std::numeric_limits<uint16_t>::max();
+
+    winsize term_winsize;
+    int r = ioctl(msg.m_fd, TIOCGWINSZ, &term_winsize);
+    if (r < 0) {
+        i.msg().write_status(Emu::map_errno(r));
     }
-    
+
+    QnxMsg::dev::term_size_reply reply;
+    clear(&reply);
+    reply.m_oldcols = msg.m_cols;
+    reply.m_oldrows = msg.m_rows;
+
+    if (msg.m_cols != no_change || msg.m_rows != no_change) {
+        if (msg.m_cols != no_change)
+            term_winsize.ws_col = msg.m_cols;
+        if (msg.m_rows != no_change)
+            term_winsize.ws_row = msg.m_rows;
+
+        r = ioctl(msg.m_fd, TIOCSWINSZ, &term_winsize);
+        if (r < 0) {
+            i.msg().write_status(Emu::map_errno(r));
+        }
+    }
+
+    reply.m_status = Qnx::QEOK;
+    i.msg().write_type(0, &reply);
 }

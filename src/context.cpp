@@ -66,9 +66,9 @@ void Context::dump(FILE *s, size_t stack) {
     auto ip = reg_eip();
     try {
         auto linear = translate(Context::CS, ip, 0);
-        fprintf(s, "handler_segv %x:%x, linear %p\n", cs, ip, linear);
+        fprintf(s, "context %x:%x, linear %p\n", cs, ip, linear);
     } catch (const GuestStateException& e) {
-        fprintf(s, "handler_segv %x:%x, %s\n", cs, ip, e.what());
+        fprintf(s, "context %x:%x, %s\n", cs, ip, e.what());
     }
 
     fprintf(s, "EAX: %08X  EBX: %08x  ECX: %08X  EDX: %08X\n",

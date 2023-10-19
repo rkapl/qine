@@ -38,7 +38,11 @@ void Msg::dump_send(FILE *f) {
             break;
         fprintf(f, "%02X ", *static_cast<uint8_t*>(m_proc->translate_segmented(s.m_ptr)));
     }
-    fprintf(f, "\n");
+
+    int rs = 0;
+    for (size_t i = 0; i < m_rcv_parts; i++)
+        rs += m_rcv[i].mxfer_len;
+    fprintf(f, ", reply size %d\n", rs);
 }
 
 void Msg::dump_structure(FILE *f) {

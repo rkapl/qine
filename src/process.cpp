@@ -12,6 +12,7 @@
 #include <string>
 #include <sys/ucontext.h>
 #include <system_error>
+#include <unistd.h>
 #include <vector>
 
 #include "gen_msg/dev.h"
@@ -282,7 +283,8 @@ void Process::setup_startup_context(int argc, char **argv)
         alloc.push_string(c);    
         ctx.push_stack(alloc.offset());
     };
-
+    
+    // cmd and pfx must be last (probably so that the runtime can easily remove them)
     std::string cwd_env("__CWD=");
     cwd_env.append(cpp_getcwd());
     alloc.push_string(cwd_env.c_str());
@@ -290,6 +292,15 @@ void Process::setup_startup_context(int argc, char **argv)
 
     alloc.push_string("__PFX=//1");
     ctx.push_stack(alloc.offset());
+
+    for (char **e = environ; *e; e++) {
+        if (strcmp(*e, "__CWD") == 0)
+            /* Hm... So how is it passed in qnx? Injected by the loader? */
+            continue;
+        if (strcmp(*e, "__PFX") == 0)
+            continue;
+        push_env(*e);
+    }
 
     /* Argv */
     m_file_name.resize(Qnx::QPATH_MAX_T);

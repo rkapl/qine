@@ -197,12 +197,41 @@ msg fd_query {
     }
 }
 
-msg vc_detach {
-    type: 32;
-    request {}
+msg fd_action1 {
+    type: 22;
+    subtype: 4;
+    # Not clear what this is doing but it is called during opendir with unclear purpose
+    request fd_request;
     reply {
         status: u16;
+        padd: u16;
+        padd: u16;
     }
+}
+
+struct vc {
+    # not 100%
+    type: u16;
+    flags: u16;
+    nid: nid;
+    pid: pid;
+    padd: u16;
+    length:u16;
+}
+
+msg vc_attach {
+    type: 31;
+    request vc;
+    reply {
+        status: u16;
+        pid: u16;
+    }
+}
+
+msg vc_detach {
+    type: 32;
+    request vc;
+    reply vc;
 }
 
 msg psinfo {
