@@ -206,6 +206,9 @@ void MainHandler::receive(MsgInfo& i) {
         case QnxMsg::fsys::msg_readlink::TYPE:
             fsys_readlink(i);
             break;
+        case QnxMsg::fsys::msg_link::TYPE:
+            fsys_link(i);
+            break;
 
         case QnxMsg::dev::msg_tcgetattr::TYPE:
             dev_tcgetattr(i);
@@ -1223,6 +1226,43 @@ void MainHandler::fsys_readlink(MsgInfo &i) {
         reply.m_status = Qnx::QEOK;
         msg.m_path[r] = 0;
         i.msg().write_type(0, &reply);
+    } else {
+        i.msg().write_status(Emu::map_errno(errno));
+    }
+}
+
+std::string MainHandler::get_fd_path(int fd)
+{
+    char fdlink[64];
+    snprintf(fdlink, sizeof(fdlink), "/proc/self/fd/%d",fd);
+
+    std::string buf;
+    buf.resize(PATH_MAX);
+
+    int r = readlink(fdlink, buf.data(), buf.size());
+    if (r < 0) {
+        throw InconsistentFd();
+    }
+    buf.resize(r);
+    return buf;
+}
+
+void MainHandler::fsys_link(MsgInfo &i) {
+    /* Note: we cannot use linkat without CAP_DAC_READ_SEARCH, which would be ideal*/
+    QnxMsg::fsys::link_request msg;
+    i.msg().read_type(&msg);
+
+    std::string fd_path;
+    try {
+        fd_path = get_fd_path(msg.m_arg.m_fd);
+    } catch (const InconsistentFd&) {
+        i.msg().write_status(Qnx::QEBADF);
+        return;
+    }
+
+    int r = link(fd_path.c_str(), msg.m_new_path);
+    if (r == 0) {
+        i.msg().write_status(Qnx::QEOK);
     } else {
         i.msg().write_status(Emu::map_errno(errno));
     }

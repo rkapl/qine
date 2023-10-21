@@ -25,7 +25,11 @@ msg mkspecial {
 
 msg link {
     type: 0x0204;
-    request {}
+    # links an existing handle to new_path
+    request {
+        arg: open;
+        new_path: path;
+    }
     reply status;
 }
 

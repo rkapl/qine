@@ -12,11 +12,19 @@ namespace QnxMsg::io {
     struct stat;
 };
 
+class InconsistentFd: std::runtime_error {
+public:
+    InconsistentFd(): std::runtime_error("cannot obtain information for opened FD") {}
+};
+
 /* Handles proc messages and passtrough FD messages */
 class MainHandler: public MsgHandler {
 public:
     void receive(MsgInfo& msg);
 private:
+    std::string get_fd_path(int fd);
+    uint32_t map_file_flags_to_host(uint32_t flags);
+
     void msg_handle(MsgInfo &i);
 
     void proc_segment_realloc(MsgInfo &i);
@@ -43,8 +51,6 @@ private:
     void proc_exec_common(MsgInfo &i);
     void proc_wait(MsgInfo &i);
 
-    uint32_t map_file_flags_to_host(uint32_t flags);
-
     void io_open(MsgInfo &i);
     void io_stat(MsgInfo &i);
     void io_rename(MsgInfo &i);
@@ -65,6 +71,7 @@ private:
     void fsys_unlink(MsgInfo &i);
     void fsys_mkspecial(MsgInfo &i);
     void fsys_readlink(MsgInfo &i);
+    void fsys_link(MsgInfo &i);
 
     void transfer_stat(QnxMsg::io::stat& dst, struct stat& src);
 
