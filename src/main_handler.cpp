@@ -145,6 +145,9 @@ void MainHandler::receive(MsgInfo& i) {
         case QnxMsg::proc::msg_wait::TYPE:
             proc_wait(i);
             break;
+        case QnxMsg::proc::msg_prefix::TYPE:
+            proc_prefix(i);
+            break;
 
         case QnxMsg::io::msg_handle::TYPE:
         case QnxMsg::io::msg_io_open::TYPE:
@@ -612,7 +615,7 @@ void MainHandler::proc_exec_common(MsgInfo &i) {
     argvp.erase(argvp.end() - 1);
     envp.erase(envp.end() - 1);
 
-    // remove prefix, doe not handle malformed ones
+    // remove prefix, does not handle malformed ones
     // TODO: pass argv[0] and exec path to qine separately
     const char *f = &buf[exec_path_o];
     if (f[0] == '/' && f[1] == '/') {
@@ -643,6 +646,15 @@ void MainHandler::proc_exec_common(MsgInfo &i) {
         root_env.append(qnx_root);
         envp.push_back(root_env.c_str());
     }
+
+    // fixup cwd
+    for (auto e: envp) {
+        const char *cwd_name = "__CWD=";
+        if (strncmp(cwd_name, e, strlen(cwd_name)) == 0) {
+            chdir(e + strlen(cwd_name));
+        }
+    }
+
     envp.push_back(nullptr);
 
      for (auto o: final_argv) {
@@ -753,6 +765,23 @@ void MainHandler::io_open(MsgInfo& i) {
     }
 
     i.msg().write_status(Qnx::QEOK);
+}
+
+void MainHandler::proc_prefix(MsgInfo &i)
+{
+    QnxMsg::proc::prefix_request msg;
+    i.msg().read_type(&msg);
+
+    QnxMsg::proc::prefix_reply reply;
+    clear(&reply);
+    reply.m_status = Qnx::QEOK;
+
+    if (msg.m_path[0] == 0) {
+        strlcpy(reply.m_prefix, "/=1,a", sizeof(reply.m_prefix));
+    } else {
+        msg.m_path[0] = 0;
+    }
+    i.msg().write_type(0, &reply);
 }
 
 void MainHandler::io_rename(MsgInfo& i) {

@@ -44,6 +44,7 @@ private:
     void proc_getid(MsgInfo &i);
     void proc_sigmask(MsgInfo &i);
     void proc_osinfo(MsgInfo &i);
+    void proc_prefix(MsgInfo &i);
 
     void proc_fork(MsgInfo &i);
     void proc_spawn(MsgInfo &i);

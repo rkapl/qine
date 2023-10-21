@@ -351,3 +351,20 @@ msg osinfo {
         # osinfo structure goes here
     }
 }
+
+msg prefix {
+    type: 26;
+    subtype: 2;
+
+    request {
+        unit: u16;
+        replace: u16;
+        padd: u32;
+        path: path;
+    }
+
+    reply {
+        status: u16;
+        prefix: path;
+    }
+}
