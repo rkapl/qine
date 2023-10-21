@@ -36,6 +36,7 @@
 #include "context.h"
 #include "types.h"
 #include "log.h"
+#include "util.h"
 
 Process* Process::m_current = nullptr;
 
@@ -293,12 +294,14 @@ void Process::setup_startup_context(int argc, char **argv)
     alloc.push_string("__PFX=//1");
     ctx.push_stack(alloc.offset());
 
+
     for (char **e = environ; *e; e++) {
-        if (strcmp(*e, "__CWD") == 0)
+        if (starts_with(*e, "__CWD="))
             /* Hm... So how is it passed in qnx? Injected by the loader? */
             continue;
-        if (strcmp(*e, "__PFX") == 0)
+        if (starts_with(*e,  "__PFX="))
             continue;
+        //printf("Passing %s\n", *e);
         push_env(*e);
     }
 

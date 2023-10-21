@@ -17,6 +17,7 @@
 #include <sys/wait.h>
 #include <sys/ioctl.h>
 #include <termios.h>
+#include <vector>
 
 #include "gen_msg/common.h"
 #include "gen_msg/dev.h"
@@ -39,9 +40,9 @@
 #include "types.h"
 #include "log.h"
 #include "qnx/pathconf.h"
+#include "util.h"
 #include <gen_msg/proc.h>
 #include <gen_msg/io.h>
-#include <vector>
 
 
 void MainHandler::receive(MsgInfo& i) {
@@ -649,9 +650,9 @@ void MainHandler::proc_exec_common(MsgInfo &i) {
 
     // fixup cwd
     for (auto e: envp) {
-        const char *cwd_name = "__CWD=";
-        if (strncmp(cwd_name, e, strlen(cwd_name)) == 0) {
-            chdir(e + strlen(cwd_name));
+        const char* prefix = "__CWD";
+        if (starts_with(e, prefix) == 0) {
+            chdir(e + strlen(prefix));
         }
     }
 

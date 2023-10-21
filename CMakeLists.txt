@@ -28,6 +28,7 @@ add_executable(qine
   src/segment.h src/segment.cpp
   src/segment_descriptor.h src/segment_descriptor.cpp
   src/msg.h src/msg.cpp
+  src/util.h src/util.cpp
   src/msg/meta.h src/msg/meta.cpp
   src/msg/dump.h src/msg/dump.cpp
   ${MSG_SRC} ${MSG_H}
