@@ -8,6 +8,7 @@ import argparse
 
 parse = argparse.ArgumentParser()
 parse.add_argument('test')
+parse.add_argument('-d', action='append')
 
 args = parse.parse_args()
 
@@ -46,6 +47,11 @@ def run_test(test):
             str(qnx / 'usr/lib')
         ])
     ])
-    exec(qine_cmd + [f'./{test}'])
+
+    extra_args = []
+    for a in args.d or []:
+        extra_args.extend(['-d', a])
+
+    exec([qine] + extra_args + ['--', f'./{test}'])
 
 run_test(args.test)
