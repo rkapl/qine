@@ -275,14 +275,14 @@ class MetaInfo:
                 if isinstance(fd, Primitive):
                     c_def('static', f'Meta::Field {f.c_name}',
                     head + ['F::' + fd.name.upper(), 'P::' + f.presentation])
-                elif isinstance(fd, Struct):
+                else:
                     c_def('static', f'Meta::Field {f.c_name}',
                     head + ['F::SUB', 'P::DEFAULT', '&' + fd.c_def_struct])
                 
             c_def('static', f'Meta::Field {s.c_def_fields}[]', [f.c_name for f in s.fields])
 
             c_def('', f'Meta::Struct {s.c_def_struct}', [
-            len(s.fields), s.c_def_fields, f'sizeof({s.name})'
+                len(s.fields), s.c_def_fields, f'sizeof({s.name})'
             ])
             o.write('\n')
 

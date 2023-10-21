@@ -1,12 +1,13 @@
-include common : open;
+include common : open status;
 
 msg io_open {
      type: 0x101;
 
-     request open;
-     reply {
-          status: u16;
+     request {
+        open: open;
+        file: path;
      }
+     reply status;
 }
 
 msg close {
@@ -16,17 +17,33 @@ msg close {
           fd: fd;
           padd: u32;
      }
-
-     reply {
-          status: u16;
-     }
+     reply status;
 }
 
 msg handle {
      type: 0x109;
 
+     request {
+        open: open;
+        file: path;
+     }
+     reply status;
+}
+
+msg rename {
+     type: 0x106;
+     request {
+          open: open;
+          from: path;
+          to: path;
+     }
+     reply status;
+}
+
+msg chdir {
+     type: 0x110;
      request open;
-     reply open;
+     reply status;
 }
 
 msg read {
@@ -104,7 +121,10 @@ struct stat {
 msg stat {
      type: 0x115;
 
-     request open;
+     request {
+          args: open;
+          path: path;
+     }
      reply {
           status: u16;
           padd: u16;
@@ -153,10 +173,7 @@ msg rewinddir {
      request {
           fd: u16;
      }
-
-     reply {
-          status: u16;
-     }
+     reply status;
 }
 
 msg fcntl_flags {
@@ -181,7 +198,51 @@ msg dup {
           dst_fd: u16;
           padd: u16;
      }
+     reply status;
+}
+
+msg fpathconf {
+     type: 0x107;
+     request {
+          fd: u16;
+          idx: u16;
+     }
      reply {
           status: u16;
+          padd: u16;
+          value: i16;
      }
+}
+
+msg chmod {
+     type: 0x010B;
+     request {
+          fd: u16;
+          mode: u16;
+     }
+     reply status;
+}
+
+msg chown {
+     type: 0x010C;
+     request {
+          fd: u16;
+          gid: u16;
+          uid: u16;
+     }
+     reply status;
+}
+
+msg utime {
+     type: 0x010D;
+
+     request {
+          fd: u16;
+          actime: time;
+          mod: time;
+          cur_flag: u16;
+          zero: u16;
+     }
+
+     reply status;
 }

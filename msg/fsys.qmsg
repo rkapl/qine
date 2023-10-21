@@ -1,10 +1,67 @@
-include common : open;
+include common : open status;
 
 msg unlink {
     type: 0x203;
 
-    request open;
+    request {
+        args: open;
+        path: path;
+    }
     reply {
         status: u16;
     }
+}
+
+msg mkspecial {
+    type: 0x0202;
+
+    request {
+        open: open;
+        path: path;
+        target: path;
+    }
+    reply status;
+}
+
+msg link {
+    type: 0x0204;
+    request {}
+    reply status;
+}
+
+msg sync {
+    type: 0x20A;
+    request {}
+    reply status;
+}
+
+msg trunc {
+    type: 0x210;   
+    request {}
+    reply status;
+}
+
+msg readlink {
+    type: 0x0216;
+    request {
+        arg: open;
+        path: path;
+    }
+    reply {
+        status: u16;
+        padd: u16;
+        path: path;
+    }
+}
+
+msg fsync {
+    type: 0x218;
+    request {}
+    reply status;
+}
+
+msg fdinfo {
+    type: 0x021A;
+    request {}
+    reply status;
 }

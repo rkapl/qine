@@ -50,7 +50,7 @@ static void print_field(FILE* s, const Meta::Field& f, int indent, size_t offset
             print_int(s, f, *static_cast<const uint32_t*>(v));
             break;
         case Meta::Field::Format::PID:
-            fprintf(s, "pid %d", *static_cast<const uint32_t*>(v));
+            fprintf(s, "pid %d", *static_cast<const uint16_t*>(v));
             break;
         case Meta::Field::Format::NID:
             fprintf(s, "nid %d", *static_cast<const uint32_t*>(v));

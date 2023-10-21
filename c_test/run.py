@@ -40,8 +40,9 @@ def run_test(test):
     ]
 
     exec(qine_cmd + [watcom / 'bin/wcc386', f'../../{test}.c'] + includes)
+    exec(qine_cmd + [watcom / 'bin/wcc386', f'../../common.c'] + includes)
     exec(qine_cmd + [watcom / 'bin/wlink', 
-        'FORM', 'qnx', 'flat', 'NAME', test, 'OP', 'q', 'FILE', f'{test}.o', 
+        'FORM', 'qnx', 'flat', 'NAME', test, 'OP', 'q', 'FILE', f'{test}.o', 'FILE', f'common.o',
         'LIBP', ':'.join([
             str(watcom / 'include'),
             str(qnx / 'usr/lib')

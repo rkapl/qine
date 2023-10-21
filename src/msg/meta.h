@@ -9,7 +9,7 @@
 
 namespace Qnx {
     /* See comment in io_msg.h */
-    using PathBuf = char[256 + 100];
+    using PathBuf = char[256];
     constexpr int QNCCS = 40;
     using TermCc = uint16_t[QNCCS];
     using Stdfds = uint8_t[10];

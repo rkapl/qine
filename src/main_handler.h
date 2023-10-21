@@ -47,6 +47,7 @@ private:
 
     void io_open(MsgInfo &i);
     void io_stat(MsgInfo &i);
+    void io_rename(MsgInfo &i);
     void io_fstat(MsgInfo &i);
     void io_close(MsgInfo &i);
     void io_read(MsgInfo &i);
@@ -56,8 +57,14 @@ private:
     void io_rewinddir(MsgInfo &i);
     void io_fcntl_flags(MsgInfo &i);
     void io_dup(MsgInfo &i);
+    void io_fpathconf(MsgInfo &i);
+    void io_chmod(MsgInfo &i);
+    void io_chown(MsgInfo &i);
+    void io_utime(MsgInfo &i);
 
     void fsys_unlink(MsgInfo &i);
+    void fsys_mkspecial(MsgInfo &i);
+    void fsys_readlink(MsgInfo &i);
 
     void transfer_stat(QnxMsg::io::stat& dst, struct stat& src);
 

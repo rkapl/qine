@@ -132,8 +132,15 @@ msg open {
     # Seems to match _io_open, used also for reply and maybe other commds
     type: 25;
     
-    request open;
-    reply open;
+    request {
+        open: open;
+        file: path;
+    }
+    reply {
+        status: u16;
+        open: open;
+        file: path;
+    }
 }
 
 struct fd_request {

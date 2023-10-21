@@ -1,4 +1,3 @@
-#include <asm-generic/ioctls.h>
 #include <dirent.h>
 #include <errno.h>
 #include <iterator>
@@ -34,10 +33,12 @@
 #include "qnx/osinfo.h"
 #include "qnx/procenv.h"
 #include "qnx/psinfo.h"
+#include "qnx/stat.h"
 #include "qnx/types.h"
 #include "segment_descriptor.h"
 #include "types.h"
 #include "log.h"
+#include "qnx/pathconf.h"
 #include <gen_msg/proc.h>
 #include <gen_msg/io.h>
 #include <vector>
@@ -147,7 +148,11 @@ void MainHandler::receive(MsgInfo& i) {
 
         case QnxMsg::io::msg_handle::TYPE:
         case QnxMsg::io::msg_io_open::TYPE:
+        case QnxMsg::io::msg_chdir::TYPE:
             io_open(i);
+            break;
+        case QnxMsg::io::msg_rename::TYPE:
+            io_rename(i);
             break;
         case QnxMsg::io::msg_stat::TYPE:
             io_stat(i);
@@ -179,9 +184,27 @@ void MainHandler::receive(MsgInfo& i) {
         case QnxMsg::io::msg_dup::TYPE:
             io_dup(i);
             break;
+        case QnxMsg::io::msg_fpathconf::TYPE:
+            io_fpathconf(i);
+            break;
+        case QnxMsg::io::msg_chmod::TYPE:
+            io_chmod(i);
+            break;
+        case QnxMsg::io::msg_chown::TYPE:
+            io_chown(i);
+            break;
+        case QnxMsg::io::msg_utime::TYPE:
+            io_utime(i);
+            break;
 
         case QnxMsg::fsys::msg_unlink::TYPE:
             fsys_unlink(i);
+            break;
+        case QnxMsg::fsys::msg_mkspecial::TYPE:
+            fsys_mkspecial(i);
+            break;
+        case QnxMsg::fsys::msg_readlink::TYPE:
+            fsys_readlink(i);
             break;
 
         case QnxMsg::dev::msg_tcgetattr::TYPE:
@@ -345,11 +368,13 @@ void MainHandler::proc_segment_realloc(MsgInfo& i)
 
 void MainHandler::proc_open(MsgInfo& i) {
     /* proc_open does not actually open a file, just resolves the file name*/
-    QnxMsg::common::open msg;
+    QnxMsg::proc::open_request msg;
     i.msg().read_type(&msg);
 
+    /* and we do not do any resolution, reply back with the same path  */
     msg.m_type = Qnx::QEOK;
-    msg.m_pid = 1;
+    msg.m_open.m_pid = 1;
+    msg.m_open.m_nid = i.ctx().proc()->nid();
     i.msg().write_type(0, &msg);
 }
 
@@ -360,7 +385,8 @@ void MainHandler::proc_vc_attach(MsgInfo& i)
     i.msg().read_type(&vc);
 
     if (vc.m_nid == 0 || vc.m_nid == proc->nid()) {
-        if (vc.m_pid == proc->pid()) {
+        /* Trying to talk to PID 1 or ourselves? That is ok. */
+        if (vc.m_pid == proc->pid() || vc.m_pid == 1) {
             QnxMsg::proc::vc_attach_reply reply;
             clear(&reply);
             reply.m_status = Qnx::QEOK;
@@ -423,7 +449,7 @@ void MainHandler::proc_sigact(MsgInfo &i) {
     memset(&reply, 0, sizeof(reply));
     int r = i.ctx().proc()->m_emu.signal_sigact(msg.m_signum, msg.m_offset, msg.m_mask);
     if (r < 0) {
-        reply.m_status = Emu::map_errno(r);
+        reply.m_status = Emu::map_errno(errno);
     } else {
         reply.m_status = Qnx::QEOK;
     }
@@ -671,24 +697,32 @@ uint32_t MainHandler::map_file_flags_to_host(uint32_t oflag) {
 }
 
 void MainHandler::io_open(MsgInfo& i) {
-    QnxMsg::common::open msg;
+    /* The oter requests have the same format */
+    QnxMsg::io::io_open_request msg;
     i.msg().read_type(&msg);
 
     int mapped_oflags = O_RDONLY;
-    int oflag = msg.m_oflag;
-    int eflags = msg.m_eflag;
+    int oflag = msg.m_open.m_oflag;
+    int eflags = msg.m_open.m_eflag;
     if (msg.m_type == QnxMsg::io::msg_io_open::TYPE) {
         mapped_oflags = map_file_flags_to_host(oflag);
     } else if (msg.m_type == QnxMsg::io::msg_handle::TYPE) {
-        if (msg.m_oflag == Qnx::IO_HNDL_RDDIR) {
+        if (msg.m_open.m_oflag == Qnx::IO_HNDL_RDDIR) {
             mapped_oflags |= O_DIRECTORY;
+        } else if (msg.m_open.m_oflag == Qnx::IO_HNDL_CHANGE || msg.m_open.m_oflag == Qnx::IO_HNDL_UTIME) {
+            // chown etc.
+            mapped_oflags |= O_RDONLY;
         } else {
             mapped_oflags |= O_PATH;
+            if (msg.m_open.m_mode & Qnx::QS_IFLNK) 
+                mapped_oflags |= O_NOFOLLOW;
         }
+    } else if (msg.m_type == QnxMsg::io::msg_chdir::TYPE) {
+        mapped_oflags |= O_DIRECTORY;
     }
     
     // TODO: handle cloexec and flags
-    int fd = ::open(msg.m_path, mapped_oflags, msg.m_mode);
+    int fd = ::open(msg.m_file, mapped_oflags, msg.m_open.m_mode);
     if (fd < 0) {
         i.msg().write_status(Emu::map_errno(errno));
         return;
@@ -696,9 +730,9 @@ void MainHandler::io_open(MsgInfo& i) {
         msg.m_type = 0;
     }
 
-    if (fd != msg.m_fd) {
+    if (fd != msg.m_open.m_fd) {
         // move fd to final location
-        int r = dup2(fd, msg.m_fd);
+        int r = dup2(fd, msg.m_open.m_fd);
         if (r < 0) {
             i.msg().write_status(Emu::map_errno(errno));
             return;
@@ -709,14 +743,31 @@ void MainHandler::io_open(MsgInfo& i) {
     i.msg().write_status(Qnx::QEOK);
 }
 
+void MainHandler::io_rename(MsgInfo& i) {
+    QnxMsg::io::rename_request msg;
+    i.msg().read_type(&msg);
+
+    int r = rename(msg.m_from, msg.m_to);
+    if (r == 0) {
+        i.msg().write_status(Qnx::QEOK);
+    } else {
+        i.msg().write_status(Emu::map_errno(errno));
+    }
+}
+
 void MainHandler::io_stat(MsgInfo& i) {
-    QnxMsg::common::open msg;
+    QnxMsg::io::stat_request msg;
     i.msg().read_type(&msg);
     struct stat sb;
 
     QnxMsg::io::stat_reply reply;
     memset(&reply, 0, sizeof(reply));
-    int r = stat(msg.m_path, &sb);
+    int r;
+    if (msg.m_args.m_mode & Qnx::QS_IFLNK) {
+        r = lstat(msg.m_path, &sb);
+    } else {
+        r = stat(msg.m_path, &sb);
+    }
     if (r < 0) {
         reply.m_status = Emu::map_errno(errno);
         i.msg().write_type(0, &reply);
@@ -815,7 +866,44 @@ void MainHandler::transfer_stat(QnxMsg::io::stat& dst, struct stat& src) {
     dst.m_mtime = src.st_mtim.tv_sec;
     dst.m_atime = src.st_atim.tv_sec;
     dst.m_ctime = src.st_ctim.tv_sec;
-    dst.m_mode = src.st_mode;
+
+    // the basic permissions are the same
+    dst.m_mode = src.st_mode & ACCESSPERMS;
+
+    switch (src.st_mode & S_IFMT) {
+        case S_IFIFO:
+            dst.m_mode |= Qnx::QS_IFIFO;
+            break;
+        case S_IFCHR:
+            dst.m_mode |= Qnx::QS_IFCHR;
+            break;
+        case S_IFDIR:
+            dst.m_mode |= Qnx::QS_IFDIR;
+            break;
+        /* IFNAME is Qnx special */
+        case S_IFBLK:
+            dst.m_mode |= Qnx::QS_IFBLK;
+            break;
+        case S_IFREG:
+            dst.m_mode |= Qnx::QS_IFREG;
+            break;
+        case S_IFLNK:
+            dst.m_mode |= Qnx::QS_IFLNK;
+            break;
+        case S_IFSOCK:
+            dst.m_mode |= Qnx::QS_IFSOCK;
+            break;
+        default:
+            dst.m_mode |= Qnx::QS_IFCHR;
+    }
+
+    if (src.st_mode & S_ISUID)
+        dst.m_mode |= Qnx::QS_ISUID;
+    if (src.st_mode & S_ISGID)
+        dst.m_mode |= Qnx::QS_ISGID;
+    if (src.st_mode & S_ISVTX)
+        dst.m_mode |= Qnx::QS_ISVTX;
+    
     dst.m_uid = src.st_uid;
     dst.m_gid = src.st_gid;
     dst.m_nlink = src.st_nlink;
@@ -853,7 +941,7 @@ void MainHandler::io_lseek(MsgInfo &i) {
     // TODO: handle overflow
     off_t off = lseek(msg.m_fd, msg.m_offset, msg.m_whence);
     if (off == -1) {
-        reply.m_status = Emu::map_errno(off);
+        reply.m_status = Emu::map_errno(errno);
         reply.m_zero = 0;
         reply.m_offset = -1;
     } else {
@@ -985,12 +1073,159 @@ void MainHandler::io_dup(MsgInfo &i) {
     }
 }
 
+void MainHandler::io_fpathconf(MsgInfo &i) {
+    QnxMsg::io::fpathconf_request msg;
+    i.msg().read_type(&msg);
+
+    int linux_name = -1;
+    int limit = std::numeric_limits<uint16_t>::max();
+
+    QnxMsg::io::fpathconf_reply reply;
+    clear(&reply);
+
+    switch(msg.m_idx) {
+        case Qnx::QPC_LINK_MAX:
+            linux_name = _PC_LINK_MAX;
+            break;
+        case Qnx::QPC_MAX_CANON:
+            linux_name = _PC_MAX_CANON;
+            break;
+        case Qnx::QPC_MAX_INPUT:
+            linux_name = _PC_MAX_INPUT;
+            break;
+        case Qnx::QPC_NAME_MAX:
+            linux_name = _PC_NAME_MAX;
+            limit = Qnx::QNAME_MAX;
+            break;
+        case Qnx::QPC_PATH_MAX:
+            linux_name = _PC_PATH_MAX;
+            limit = Qnx::QPATH_MAX;
+            break;
+        case Qnx::QPC_PIPE_BUF:
+            linux_name = _PC_PIPE_BUF;
+            break;
+        case Qnx::QPC_CHOWN_RESTRICTED:
+            linux_name = _PC_CHOWN_RESTRICTED;
+            break;
+        case Qnx::QPC_NO_TRUNC:
+            linux_name = _PC_NO_TRUNC;
+            break;
+        case Qnx::QPC_VDISABLE:
+            linux_name = _PC_VDISABLE;
+            break;
+        case Qnx::QPC_DOS_SHARE:
+        case Qnx::QPC_DOS_LOCKS:
+            reply.m_status = Qnx::QEOK;
+            reply.m_value = 0;
+            i.msg().write_type(0, &reply);
+            return;
+        default:
+            reply.m_status = Qnx::QEINVAL;
+            reply.m_value = -1;
+            i.msg().write_type(0, &reply);
+            return;
+    }
+
+    errno = 0;
+    int r = fpathconf(msg.m_fd, msg.m_idx);
+    if (r < 0 && errno != 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+    } else {
+        reply.m_status = Qnx::QEOK;
+        reply.m_value = std::min(limit, r);
+        i.msg().write_type(0, &reply);
+    }
+}
+
+void MainHandler::io_chmod(MsgInfo &i) {
+    QnxMsg::io::chmod_request msg;
+    i.msg().read_type(&msg);
+
+    int r = fchmod(msg.m_fd, msg.m_mode);
+    i.msg().write_status((r == 0) ? Qnx::QEOK : Emu::map_errno(errno));
+}
+
+void MainHandler::io_chown(MsgInfo &i) {
+    QnxMsg::io::chown_request msg;
+    i.msg().read_type(&msg);
+
+    int r = fchown(msg.m_fd, msg.m_uid, msg.m_gid);
+    i.msg().write_status((r == 0) ? Qnx::QEOK : Emu::map_errno(errno));
+}
+
+void MainHandler::io_utime(MsgInfo &i) {
+    QnxMsg::io::utime_request msg;
+    i.msg().read_type(&msg);
+    int r;
+
+    if (msg.m_cur_flag) {
+        r = futimens(msg.m_fd, NULL);
+    } else {
+        struct timespec ts[2];
+        ts[0].tv_nsec = 0;
+        ts[0].tv_sec = msg.m_actime;
+        ts[1].tv_nsec = 0;
+        ts[1].tv_sec = msg.m_mod;
+        r = futimens(msg.m_fd, ts);
+    }
+
+    i.msg().write_status((r == 0) ? Qnx::QEOK : Emu::map_errno(errno));
+}
+
 void MainHandler::fsys_unlink(MsgInfo &i) {
-    QnxMsg::common::open msg;
+    QnxMsg::fsys::unlink_request msg;
     i.msg().read_type(&msg);
 
     int r = unlink(msg.m_path);
-    i.msg().write_status(Emu::map_errno(r));
+    if (r < 0 && errno == EISDIR) {
+        r = rmdir(msg.m_path);
+    }
+
+    if (r == 0) {
+        i.msg().write_status(Qnx::QEOK);
+    } else {
+        i.msg().write_status(Emu::map_errno(errno));
+    }
+}
+
+void MainHandler::fsys_mkspecial(MsgInfo &i) {
+    QnxMsg::fsys::mkspecial_request msg;
+    i.msg().read_type(&msg);
+    uint16_t mode = msg.m_open.m_mode;
+    int r;
+
+    if (S_ISDIR(mode)) {
+        r = mkdir(msg.m_path, mode & ALLPERMS);
+        if (r == 0) {
+            i.msg().write_status(Qnx::QEOK);
+        } else {
+            i.msg().write_status(Emu::map_errno(errno));
+        }
+    } else if (mode & S_IFLNK) {
+        r = symlink(msg.m_target, msg.m_path);
+        if (r == 0) {
+            i.msg().write_status(Qnx::QEOK);
+        } else {
+            i.msg().write_status(Emu::map_errno(errno));
+        }
+    } else {
+        i.msg().write_status(Qnx::QENOSYS);
+    }
+}
+
+void MainHandler::fsys_readlink(MsgInfo &i) {
+    QnxMsg::fsys::readlink_request msg;
+    i.msg().read_type(&msg);
+    QnxMsg::fsys::readlink_reply reply;
+    clear(&reply);
+    int r = readlink(msg.m_path, reply.m_path, Qnx::QPATH_MAX);
+    if (r >= 0) {
+        reply.m_status = Qnx::QEOK;
+        msg.m_path[r] = 0;
+        i.msg().write_type(0, &reply);
+    } else {
+        i.msg().write_status(Emu::map_errno(errno));
+    }
 }
 
 void MainHandler::dev_tcgetattr(MsgInfo &i) {
@@ -1060,7 +1295,7 @@ void MainHandler::dev_term_size(MsgInfo &i) {
     winsize term_winsize;
     int r = ioctl(msg.m_fd, TIOCGWINSZ, &term_winsize);
     if (r < 0) {
-        i.msg().write_status(Emu::map_errno(r));
+        i.msg().write_status(Emu::map_errno(errno));
     }
 
     QnxMsg::dev::term_size_reply reply;
@@ -1076,7 +1311,7 @@ void MainHandler::dev_term_size(MsgInfo &i) {
 
         r = ioctl(msg.m_fd, TIOCSWINSZ, &term_winsize);
         if (r < 0) {
-            i.msg().write_status(Emu::map_errno(r));
+            i.msg().write_status(Emu::map_errno(errno));
         }
     }
 
