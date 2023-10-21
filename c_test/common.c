@@ -26,7 +26,7 @@ void check_existence(const char *file, const char* msg, int expected) {
 }
 
 void check_ok(const char* msg, int r) {
-    if (r == 0) {
+    if (r >= 0) {
         printf("ok! %s\n", msg);
     } else {
         perror(msg);

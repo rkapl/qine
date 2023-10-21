@@ -2,7 +2,9 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <errno.h>
+#include <string.h>
 #include <stdlib.h>
 #include <utime.h>
 #include "common.h"
@@ -13,9 +15,11 @@
 
 int main(void) {
     int r;
+    int fd;
     FILE *f;
     struct stat sb;
     const char *test_file = "test.file";
+    const char *test_msg = "Hello World\n";
     struct utimbuf test_time;
 
     unlink(test_file);
@@ -64,6 +68,32 @@ int main(void) {
         printf("ok! mtime\n");
     } else {
         printf("no! mtime = %u\n", sb.st_mtime);
+    }
+
+    sync();
+    printf("ok! sync\n");
+
+    unlink(test_file);
+    fd = open(test_file, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+    check_ok("open", fd);
+    r = fsync(fd);
+    check_ok("fsync", r);
+
+    r = write(fd, test_msg, strlen(test_msg));
+    check_ok("write", r);
+
+    r = ltrunc(fd, 4, SEEK_SET);
+    check_ok("truncate", r);
+
+    close(fd);
+
+    r = stat(test_file, &sb);
+    check_ok("truncate_stat", r);
+
+    if (sb.st_size == 4) {
+        printf("ok! truncate_size\n");
+    } else {
+        printf("no! truncate_size %d\n", (int)sb.st_size);
     }
 
     return 0;

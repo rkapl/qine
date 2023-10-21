@@ -203,11 +203,20 @@ void MainHandler::receive(MsgInfo& i) {
         case QnxMsg::fsys::msg_mkspecial::TYPE:
             fsys_mkspecial(i);
             break;
+        case QnxMsg::fsys::msg_link::TYPE:
+            fsys_link(i);
+            break;
+        case QnxMsg::fsys::msg_sync::TYPE:
+            fsys_sync(i);
+            break;
         case QnxMsg::fsys::msg_readlink::TYPE:
             fsys_readlink(i);
             break;
-        case QnxMsg::fsys::msg_link::TYPE:
-            fsys_link(i);
+        case QnxMsg::fsys::msg_trunc::TYPE:
+            fsys_trunc(i);
+            break;
+        case QnxMsg::fsys::msg_fsync::TYPE:
+            fsys_fsync(i);
             break;
 
         case QnxMsg::dev::msg_tcgetattr::TYPE:
@@ -1261,6 +1270,58 @@ void MainHandler::fsys_link(MsgInfo &i) {
     }
 
     int r = link(fd_path.c_str(), msg.m_new_path);
+    if (r == 0) {
+        i.msg().write_status(Qnx::QEOK);
+    } else {
+        i.msg().write_status(Emu::map_errno(errno));
+    }
+}
+
+void MainHandler::fsys_sync(MsgInfo &i) {
+    sync();
+    i.msg().write_status(Qnx::QEOK);
+}
+
+void MainHandler::fsys_trunc(MsgInfo &i) {
+    QnxMsg::fsys::trunc_request msg;
+    i.msg().read_type(&msg);
+    // we need to get the truncate offset, so save current pos, seek to destination, and seek back
+    // how to do that atomically, I do not know
+    off_t prev = lseek(msg.m_fd, 0, SEEK_CUR);
+    if (prev == -1) {
+        i.msg().write_status(Emu::map_errno(errno));
+        return;
+    }
+    off_t to = lseek(msg.m_fd, msg.m_offset, msg.m_whence);
+    if (to == -1) {
+        i.msg().write_status(Emu::map_errno(errno));
+        return;
+    }
+    lseek(msg.m_fd, prev, SEEK_SET);
+
+    int r = ftruncate(msg.m_fd, to);
+    if (r < 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+        return;
+    }
+    
+    QnxMsg::fsys::trunc_reply reply;
+    clear(&reply);
+    reply.m_status = Qnx::QEOK;
+    reply.m_offset = to;
+    i.msg().write_type(0, &reply);
+}
+
+void MainHandler::fsys_fsync(MsgInfo &i) {
+    QnxMsg::fsys::fsync_request msg;
+    i.msg().read_type(&msg);
+    int r;
+    if (msg.m_flags & 0xFF) {
+        r = fdatasync(msg.m_fd);
+    } else {
+        r = fsync(msg.m_fd);
+    }
+
     if (r == 0) {
         i.msg().write_status(Qnx::QEOK);
     } else {

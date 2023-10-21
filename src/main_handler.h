@@ -70,8 +70,11 @@ private:
 
     void fsys_unlink(MsgInfo &i);
     void fsys_mkspecial(MsgInfo &i);
-    void fsys_readlink(MsgInfo &i);
     void fsys_link(MsgInfo &i);
+    void fsys_sync(MsgInfo &i);
+    void fsys_readlink(MsgInfo &i);
+    void fsys_trunc(MsgInfo &i);
+    void fsys_fsync(MsgInfo &i);
 
     void transfer_stat(QnxMsg::io::stat& dst, struct stat& src);
 

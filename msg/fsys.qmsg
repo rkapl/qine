@@ -41,8 +41,17 @@ msg sync {
 
 msg trunc {
     type: 0x210;   
-    request {}
-    reply status;
+    request {
+        fd: fd;
+        offset: i32;
+        whence: u16;
+        padd: u16;
+    }
+    reply {
+        status: u16;
+        padd: u16;
+        offset: u32;
+    }
 }
 
 msg readlink {
@@ -60,12 +69,31 @@ msg readlink {
 
 msg fsync {
     type: 0x218;
-    request {}
+    request {
+        fd: fd;
+        flags: u32;
+    }
     reply status;
 }
 
 msg fdinfo {
     type: 0x021A;
-    request {}
-    reply status;
+    request {
+        pid: pid;
+        padd: u16;
+        fd: u16;
+        padd: u32;
+    }
+    reply {
+        status: u16;
+        pid: pid;
+        padd: u16;
+        fd: u16;
+        padd: u32;
+        offset: u32;
+        fsize: u32;
+        fflags: u16;
+        share: u16;
+        path: path;
+    }
 }
