@@ -2,6 +2,7 @@
 #include <string>
 #include <stdio.h>
 #include <getopt.h>
+#include <filesystem>
 #include <vector>
 
 #include "process.h"
@@ -63,6 +64,7 @@ int main(int argc, char **argv) {
     for (int i = 0; i < optind; i++) {
         self_call.push_back(argv[i]);
     }
+    self_call[0] = std::filesystem::absolute(self_call[0]);
     
     argc -= optind;
     argv += optind;

@@ -546,6 +546,7 @@ void MainHandler::proc_spawn(MsgInfo &i) {
         reply.m_status = Emu::map_errno(errno);
     } else if (r == 0) {
         proc_exec_common(i);
+        perror("exec");
         exit(255);
     } else {
         reply.m_son_pid = Process::child_pid();
@@ -639,7 +640,7 @@ void MainHandler::proc_exec_common(MsgInfo &i) {
     }
     final_argv.push_back(nullptr);
 
-    // fixup envp
+    // force QNX_ROOT to env
     const char *qnx_root = getenv("QNX_ROOT");
     std::string root_env;
     if (qnx_root) {
@@ -648,26 +649,32 @@ void MainHandler::proc_exec_common(MsgInfo &i) {
         envp.push_back(root_env.c_str());
     }
 
-    // fixup cwd
+    std::vector<const char*> final_envp;
+    // Fixup cwd. CWD gets injected into env, we outject it into host cwd
     for (auto e: envp) {
-        const char* prefix = "__CWD";
-        if (starts_with(e, prefix) == 0) {
-            chdir(e + strlen(prefix));
+        const char* prefix = "__CWD=";
+        if (starts_with(e, prefix)) {
+            const char *cwd = e + strlen(prefix);
+            //printf("Changing cwd to %s\n", cwd);
+            chdir(cwd);
+        } else if (starts_with(e, "__PFX=")) {
+            // skip
+        } else {
+            final_envp.push_back(e);
         }
     }
 
     envp.push_back(nullptr);
 
-     for (auto o: final_argv) {
+    for (auto o: final_argv) {
         //printf("Arg: %s\n", o);
     }
-    for (auto o: envp) {
+    for (auto o: final_envp) {
         //printf("Env %s\n", o);
     }
 
-    //printf("Exec: %s\n", f);
-    execve(final_argv[0], const_cast<char**>(final_argv.data()), const_cast<char**>(envp.data()));
-    exit(255);
+    //printf("About to exec: %s\n", final_argv[0]);
+    execve(final_argv[0], const_cast<char**>(final_argv.data()), const_cast<char**>(final_envp.data()));
 }
 
 void MainHandler::proc_wait(MsgInfo &i) {
