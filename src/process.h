@@ -14,7 +14,6 @@
 #include "context.h"
 #include "cpp.h"
 #include "emu.h"
-#include "process_fd.h"
 #include "main_handler.h"
 #include "msg_handler.h"
 #include "qnx/magic.h"
@@ -24,6 +23,7 @@
 #include "types.h"
 #include "intrusive_list.h"
 #include "idmap.h"
+#include "qnx_fd.h"
 #include "segment_descriptor.h"
 
 class Segment;
@@ -47,12 +47,15 @@ class Process{
     friend class MainHandler;
 public:
     static inline Process* current();
-    static void initialize(std::vector<std::string>&& self_call);
+    static Process* create();
+    void initialize(std::vector<std::string>&& self_call);
 
     std::shared_ptr<Segment> allocate_segment();
     SegmentDescriptor* create_segment_descriptor(Access access, const std::shared_ptr<Segment>& mem);
     SegmentDescriptor* create_segment_descriptor_at(Access access, const std::shared_ptr<Segment>& mem, SegmentId id);
     void* translate_segmented(FarPointer ptr, uint32_t size = 0, RwOp op = RwOp::READ);
+    FdMap& fds() {return m_fds;}
+    PathMapper& path_mapper() {return m_path_mapper;}
 
     void setup_startup_context(int argc, char **argv);
     void enter_emu();
@@ -88,17 +91,19 @@ private:
     SegmentDescriptor* descriptor_by_selector(uint16_t id);
     void setup_magic(SegmentDescriptor *data_sd, SegmentAllocator& alloc);
 
-    ProcessFd *fd_get(int id);
-    void fd_release(int id);
-
     static Process* m_current;
 
+    // memory
     IntrusiveList::List<Segment> m_segments;
     IdMap<SegmentDescriptor> m_segment_descriptors;
     
-    std::map<int, ProcessFd> m_fds;
+    // "outsourced" component
+    Emu m_emu;
+    FdMap m_fds;
     MainHandler m_main_handler;
+    PathMapper m_path_mapper;
 
+    // Qnx special memory areas
     std::shared_ptr<Segment> m_magic_pointer;
     FarPointer m_magic_guest_pointer;
     Qnx::Magic *m_magic;
@@ -108,7 +113,7 @@ private:
 
     Qnx::Sigtab *m_sigtab;
 
-    Emu m_emu;
+    // Self info
     std::string m_file_name;
     std::vector<std::string> m_self_call;
 };

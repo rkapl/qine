@@ -39,5 +39,8 @@ Log::Category Log::by_name(const char *name) {
     if (strcmp(name, "sig") == 0) {
         return SIG;
     }
+    if (strcmp(name, "map") == 0) {
+        return MAP;
+    }
     return Category::INVALID;
 }

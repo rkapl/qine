@@ -25,7 +25,7 @@ private:
     std::string get_fd_path(int fd);
     uint32_t map_file_flags_to_host(uint32_t flags);
 
-    void msg_handle(MsgInfo &i);
+    void receive_inner(MsgInfo &i);
 
     void proc_segment_realloc(MsgInfo &i);
     void proc_segment_alloc(MsgInfo &i);
@@ -53,6 +53,7 @@ private:
     void proc_wait(MsgInfo &i);
 
     void io_open(MsgInfo &i);
+    void io_chdir(MsgInfo &i);
     void io_stat(MsgInfo &i);
     void io_rename(MsgInfo &i);
     void io_fstat(MsgInfo &i);

@@ -14,6 +14,7 @@ public:
         MSG_REPLY,
         LOADER,
         UNHANDLED,
+        MAP,
         SIG,
     };
 

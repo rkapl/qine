@@ -21,7 +21,6 @@
 #include "gen_msg/proc.h"
 #include "msg/meta.h"
 #include "msg/dump.h"
-#include "process_fd.h"
 #include "qnx/magic.h"
 #include "qnx/msg.h"
 #include "qnx/procenv.h"
@@ -50,14 +49,25 @@ Process::Process():
 
 Process::~Process() {}
 
-void Process::initialize(std::vector<std::string>&& self_call) {
+Process* Process::create() {
     assert(!m_current);
     m_current = new Process();
-    m_current->m_self_call = std::move(self_call);
-    m_current->m_startup_context = Context(&m_current->m_startup_context_main, &m_current->m_startup_context_extra);
-    memset(&m_current->m_startup_context_main, 0xcc, sizeof(m_current->m_startup_context_main));
-    memset(&m_current->m_startup_context_extra, 0xcc, sizeof(m_current->m_startup_context_extra));
-    m_current->m_emu.init();
+    return m_current;
+}
+
+void Process::initialize(std::vector<std::string>&& self_call) {
+    m_self_call = std::move(self_call);
+    m_file_name.resize(Qnx::QPATH_MAX_T);
+    if (!realpath(m_self_call[0].c_str(), m_file_name.data())) {
+        throw std::system_error(errno, std::system_category());
+    }
+    m_file_name.resize(strlen(m_file_name.data()));
+
+    m_startup_context = Context(&m_startup_context_main, &m_startup_context_extra);
+    memset(&m_startup_context_main, 0xcc, sizeof(m_startup_context_main));
+    memset(&m_startup_context_extra, 0xcc, sizeof(m_startup_context_extra));
+    m_emu.init();
+    m_fds.scan_host_fds(m_current->nid(), 1, 1);
 }
 
 Qnx::pid_t Process::pid() const
@@ -114,21 +124,16 @@ std::shared_ptr<Segment> Process::allocate_segment() {
 
 SegmentDescriptor* Process::create_segment_descriptor(Access access, const std::shared_ptr<Segment>& mem)
 {
-    auto sd = m_segment_descriptors.alloc();
-    auto idx = m_segment_descriptors.index_of(sd);
-    *sd = std::move(SegmentDescriptor(idx, access, mem));
-    return sd;
+    return m_segment_descriptors.alloc_any([=](size_t idx) {return new SegmentDescriptor(idx, access, mem);});
 }
 
 SegmentDescriptor* Process::create_segment_descriptor_at(Access access, const std::shared_ptr<Segment>& mem, SegmentId id)
 {
-    auto sd = m_segment_descriptors.alloc_at(id);
-    *sd  = std::move(SegmentDescriptor(id, access, mem));
-    return sd;
+    return m_segment_descriptors.alloc_exactly_at(id, [=](size_t idx) {return new SegmentDescriptor(idx, access, mem);});
 }
 
 SegmentDescriptor* Process::descriptor_by_selector(uint16_t id) {
-    return m_segment_descriptors.get(id >> 3);
+    return m_segment_descriptors[id >> 3];
 }
 
 void Process::set_errno(int v) {
@@ -255,7 +260,7 @@ void Process::setup_startup_context(int argc, char **argv)
     }
 
     /* First allocate some space in data segment */
-    auto data_sd = m_segment_descriptors.get(m_load.data_segment.value());
+    auto data_sd = m_segment_descriptors[m_load.data_segment.value()];
     if (!data_sd) {
         throw GuestStateException("Guest does not seem to be loaded properly (no data segment)");
     }
@@ -269,7 +274,8 @@ void Process::setup_startup_context(int argc, char **argv)
     m_time_segment->reserve(MemOps::PAGE_SIZE);
     m_time_segment->grow(Access::READ_ONLY, MemOps::PAGE_SIZE);
     m_time_segment->set_limit(0x20);
-    m_time_segment_selector = m_segment_descriptors.alloc()->id();
+
+    m_time_segment_selector =  create_segment_descriptor(Access::READ_ONLY, m_time_segment)->id();
 
     /* Now create the stack environment, that is argc, argv, arge  */
     ctx.push_stack(0); // Unknown
@@ -279,39 +285,44 @@ void Process::setup_startup_context(int argc, char **argv)
 
     /* Environment */
     ctx.push_stack(0);
-
     auto push_env = [&](const char *c) {
+        //printf("pushing env %s\n", c);
         alloc.push_string(c);    
         ctx.push_stack(alloc.offset());
     };
-    
+
     // cmd and pfx must be last (probably so that the runtime can easily remove them)
-    std::string cwd_env("__CWD=");
-    cwd_env.append(cpp_getcwd());
-    alloc.push_string(cwd_env.c_str());
-    ctx.push_stack(alloc.offset());
-
-    alloc.push_string("__PFX=//1");
-    ctx.push_stack(alloc.offset());
-
+    std::string env_cwd;
+    std::string env_pfx;
+    const char *env_cwd_key = "__CWD=";
+    const char *env_pfx_key = "__PFX=";
 
     for (char **e = environ; *e; e++) {
-        if (starts_with(*e, "__CWD="))
-            /* Hm... So how is it passed in qnx? Injected by the loader? */
+        if (starts_with(*e, env_cwd_key))
+            env_cwd = *e;
+        if (starts_with(*e,  env_pfx_key))
+            env_pfx = *e;
+    }
+
+    if (env_cwd.empty()) {
+        env_cwd.append(env_cwd_key);
+        env_cwd.append(get_current_dir_name());
+    }
+    push_env(env_cwd.c_str());
+
+    if (!env_pfx.empty())
+        push_env(env_pfx.c_str());
+    
+    for (char **e = environ; *e; e++) {
+        if (starts_with(*e, env_cwd_key))
             continue;
-        if (starts_with(*e,  "__PFX="))
+        if (starts_with(*e,  env_pfx_key))
             continue;
         //printf("Passing %s\n", *e);
         push_env(*e);
     }
 
     /* Argv */
-    m_file_name.resize(Qnx::QPATH_MAX_T);
-    if (!realpath(argv[0], m_file_name.data())) {
-        throw std::system_error(errno, std::system_category());
-    }
-    m_file_name.resize(strlen(m_file_name.data()));
-
     ctx.push_stack(0);
     for (int i = argc - 1; i >= 0; i--) {
         alloc.push_string(argv[i]);
@@ -344,13 +355,4 @@ void Process::setup_startup_context(int argc, char **argv)
 
     // breakpoints
     //ctx.write<uint8_t>(Context::CS, 0x61e , 0xCC);
-}
-
-ProcessFd* Process::fd_get(int id) {
-    /* fields are default initialised */
-    return &m_fds[id];
-}
-
-void Process::fd_release(int id) {
-    m_fds.erase(id);
 }

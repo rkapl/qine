@@ -13,6 +13,7 @@ struct MsgInfo {
 public:
     Msg& msg() {return *m_msg;}
     Context& ctx() {return *m_ctx;}
+    Process& proc() {return *m_proc;}
 
     bool m_via_fd;
     /* fd or pid*/
@@ -21,6 +22,7 @@ public:
         int m_fd;
     };
 private:
+    Process* m_proc;
     Context* m_ctx;
     Msg *m_msg;
 };

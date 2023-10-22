@@ -15,6 +15,13 @@ public:
     Unsupported(const char *what): std::runtime_error(what) {}
 };
 
+class ConfigurationError: public std::exception {
+public:
+    ConfigurationError(std::string&& msg): m_msg(msg) {}
+    const char *what() const noexcept {return m_msg.c_str();};
+    std::string m_msg;
+};
+
 enum class RwOp {
     READ = 0,
     WRITE = 1,

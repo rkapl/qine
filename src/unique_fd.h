@@ -5,6 +5,7 @@
 
 #include "cpp.h"
 
+// RAAI helper around file descriptor (host FD)
 class UniqueFd: private NoCopy {
 public:
     UniqueFd(): m_fd(-1) {}

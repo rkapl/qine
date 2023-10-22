@@ -9,10 +9,6 @@
 #include "loader.h"
 #include "log.h"
 
-static struct option cmd_options[] = {
-    {0}
-};
-
 static void handle_log_opt(const char *opt) {
     bool enable = true;
     if (*opt == '+') {
@@ -36,53 +32,69 @@ static void handle_help() {
     printf("qine [options] executable [args]\n");
 }
 
+static struct option cmd_options[] = {
+    {"help", no_argument, 0, 'h'},
+    {"debug", no_argument, 0, 'd'},
+    {"map", no_argument, 0, 'm'},
+};
+
 int main(int argc, char **argv) {
-    for (;;) {
-        const char* opts = "d:h";
-        int c = getopt_long(argc, argv, opts, cmd_options, NULL);
-        if (c == -1)
-            break;
-        switch(c) {
-            case '?':
-                handle_help();
-                exit(1);
+    auto proc = Process::create();
+    try {
+        for (;;) {
+            const char* opts = "d:h:r:m:";
+            int c = getopt_long(argc, argv, opts, cmd_options, NULL);
+            if (c == -1)
                 break;
-            case 'h':
-                handle_help();
-                exit(0);
-                break;
-            case 'd':
-                handle_log_opt(optarg);
-                break;
-            default:
-                fprintf(stderr, "getopt unknown code 0x%x\n", c);
-                exit(1);
+            switch(c) {
+                case '?':
+                    handle_help();
+                    exit(1);
+                    break;
+                case 'h':
+                    handle_help();
+                    exit(0);
+                    break;
+                case 'd':
+                    handle_log_opt(optarg);
+                    break;
+                case 'm':
+                    proc->path_mapper().add_map(optarg);
+                    break;
+                default:
+                    fprintf(stderr, "getopt unknown code 0x%x\n", c);
+                    exit(1);
+            }
         }
+
+        std::vector<std::string> self_call;
+        for (int i = 0; i < optind; i++) {
+            self_call.push_back(argv[i]);
+        }
+        self_call[0] = std::filesystem::absolute(self_call[0]);
+        
+        argc -= optind;
+        argv += optind;
+
+        proc->initialize(std::move(self_call));
+    } catch (const ConfigurationError& e) {
+        fprintf(stderr, "%s\n", e.m_msg.c_str());
     }
 
-    std::vector<std::string> self_call;
-    for (int i = 0; i < optind; i++) {
-        self_call.push_back(argv[i]);
+    std::string slib_path;
+    if (getenv("QNX_SLIB")) {
+        slib_path = getenv("QNX_SLIB");
+    } else {
+        auto p = PathInfo::mk_qnx_path("/boot/sys/Slib32");
+        proc->path_mapper().map_path_to_host(p);
+        slib_path = p.host_path();
     }
-    self_call[0] = std::filesystem::absolute(self_call[0]);
-    
-    argc -= optind;
-    argv += optind;
+    load_executable(slib_path.c_str(), true);
 
-    Process::initialize(std::move(self_call));
+    auto exec_path = PathInfo::mk_qnx_path(argv[0]);
+    proc->path_mapper().map_path_to_host(exec_path);
+    load_executable(exec_path.host_path(), false);
 
-    if (!getenv("QNX_ROOT")) {
-        fprintf(stderr, "QNX_ROOT not set\n");
-        exit(1);
-    }
-    std::string syslib(getenv("QNX_ROOT"));
-    syslib.append("/boot/sys/Slib32");
-
-    load_executable(syslib.c_str(), true);
-
-    load_executable(argv[0], false);
-
-    auto proc = Process::current();
     proc->setup_startup_context(argc, argv);
 
     proc->enter_emu();

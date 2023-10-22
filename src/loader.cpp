@@ -12,7 +12,7 @@
 
 #include "process.h"
 #include "segment.h"
-#include "fd.h"
+#include "unique_fd.h"
 #include "mem_ops.h"
 #include "loader_format.h"
 #include "segment_descriptor.h"

@@ -231,6 +231,7 @@ void Emu::syscall_sendfdmx(Context &ctx)
     MsgInfo info;
     info.m_ctx = &ctx;
     info.m_msg = &msg;
+    info.m_proc = proc;
     info.m_via_fd = true;
     info.m_fd = fd;
 
@@ -253,6 +254,7 @@ void Emu::syscall_sendmx(Context &ctx)
     MsgInfo info;
     info.m_ctx = &ctx;
     info.m_msg = &msg;
+    info.m_proc = proc;
     info.m_via_fd = false;
     info.m_pid = pid;
 

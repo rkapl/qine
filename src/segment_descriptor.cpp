@@ -43,6 +43,7 @@ void SegmentDescriptor::update_descriptors() {
             ud.read_exec_only = 1;
         }
     }
+    // printf("Creating segment descrriptor %d\n", m_id);
     int r = syscall(SYS_modify_ldt, 1, &ud, sizeof(ud));
     if (r != 0) {
         throw std::logic_error(strerror(errno));

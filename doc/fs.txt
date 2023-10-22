@@ -1,0 +1,96 @@
+# QNX Intro
+
+Let' say we want to open a file /a/b/c in QNX. What QNX is does is:
+
+1) Call proc:open on the file name, to get the server PID, unit and server-local path.
+    E.g. open("a/b/c") -> the file lives in NID 1, PID 10, unit a, file "b/c"
+    Note: the appropriate name for the call would probably be "resolve"
+
+2) Call proc:qnx_fd_attach to reserve a FD and associate it with the server PID
+    E.g. qnx_fd_attach(owner_pid: 0, fd: 0, nid: 1, pid: 10, vid: 10, flags: 0, handle: 0)
+        -> fd 11 is reserved and linked to PID 10
+
+3) Call the server io:open to actually open the file
+    E.g. io:open(fd: 10, path: "b/c)
+
+4) The server actually opens the file. To store the relevant information, it can
+   either remember the pid:fd combination or use the handle mechanism. This
+   mechanism is is a way to attach an integer handle to the pid:fd which can then be
+   quickly retrieved to index into the server's own structure.
+
+5) We can then send read/write similiar calls to the server.
+
+6) We call close.
+7) We call fd_detach.
+
+Note: For remote files or inter-server symlinks, there are extra steps.
+
+# Link, stat etc.
+
+Generally, QNX likes to use the FD/open mechanism for not actually just opening files,
+but also referring to them for other purposes. This is often done using the io:handle call,
+which somewhat resembles the Linux O_PATH. It can open files for stating, chmoding, utiming, linking etc.
+
+Example chmod sequence: proc:open, proc:fd_attach, io:handle, io:chmod, io: close, proc:fd_detach
+
+# POSIX/Linux/QNX impedance mismatch
+
+QNX allows opening file for stat only. Posix does not have such a thing. So we cannot get the FD
+for e.g. a file that we cannot open to use with fstat. Linux has O_PATH for that.
+
+Unfortunately, even on Linux, there is an impedance mismatch with `link`. We cannot link back a file
+from FD (we would need CAP_DAC_READ_SEARCH to use AT_EMPTY_PATH). We cannot use link from /proc/self/fd/%d
+since link will either traverse all symlinks or no symlinks at all. And we need to traverse exactly the one magic symlink.
+
+So we will often need to keep/get paths for our FDs anyway and maybe live with some minor race-conditions.
+
+We also want to use the standard posix opendir/readdir
+
+# Qine Chroot
+
+We want to be able to construct a "chroot" for the QNX programs. There is a possibility to do it using OS tools,
+but I wanted to integrate the functionality into qine for the following reasons:
+
+- Constructing namespaces/chroots can required root priviledges and be a bit heavyweight
+- How to we get Qine into chroot. We would either need to bind-mount qine there and let it be a static library.
+- Or do a nasty overlay of QNX and Linux FS
+- Not all OS have such capabilities as Linux namespaces
+- It will allows seamless call into Linux binaries with some reasonable translation
+
+So instead we allow doing soft-chroot during our syscall emulation.
+
+# Chroot Symlink Translation
+
+We want symlinks relative to the root, like we would get in a real container.
+
+Options:
+    1) pre-translate them, e.g. like https://github.com/dex4er/fakechroot/blob/b42d1fb9538f680af2f31e864c555414ccba842a/scripts/relocatesymlinks.sh#L19
+    2) do all path resolution ourselves
+    3) use Linux openat2 RESOLVE_IN_ROOT (current short-term solution)
+
+# FD Mapping
+
+We use guest FD = host FD (if there is one), for simplicity, for passing-through FDs between host and guest etc.
+But QNX has some calls that allows us to allocate/list/search for FDs that really do not map to
+Posix. So we assume there is some OS specific way to get the FDs beforehand (e.g. list /proc/self/fd on linux)
+to populate our FD map.
+
+The downside of this approach is that we must take care not to use any extra FDs without updating our private FD
+map.
+
+To allow changing this approach in the future, we resolve the FD through our FD map anyway, just to be sure.
+
+# Recapitulation and Overall Picture
+
+We do not have multiple servers, so proc:open is hardocoded to resolve to PID 1
+(which doubles as IO server), unit 'p'.
+
+io:open and io:handle (or some other variants like mkspecial) first need to
+resolve the QNX path to host path. This is done by the mapper, which looks up
+the path in the prefixes configured on command-line (QNX root, host
+pass-through) and returns the result with additional meta-info. This info
+includes the root to use for symlink resolution, what type of executables to expect etc.
+
+io:open (et al.) then opens regular FD or O_PATH Linux FD They also store the
+original and resolved path, since we might need it later. We might need the host
+path for operations like lstat.

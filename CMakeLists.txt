@@ -22,9 +22,11 @@ add_executable(qine
   src/context.cpp src/context.h
   src/loader.h src/loader.cpp src/loader_format.h
   src/log.h src/log.cpp
-  src/main_handler.cpp src/main_handler.h
-  src/msg_handler.cpp src/msg_handler.h
+  src/main_handler.h src/main_handler.cpp
+  src/msg_handler.h src/msg_handler.cpp
+  src/path_mapper.h src/path_mapper.cpp
   src/process.h src/process.cpp
+  src/qnx_fd.h src/qnx_fd.cpp
   src/segment.h src/segment.cpp
   src/segment_descriptor.h src/segment_descriptor.cpp
   src/msg.h src/msg.cpp
@@ -35,6 +37,7 @@ add_executable(qine
 )
 
 target_include_directories(qine PRIVATE ${PROJECT_BINARY_DIR} ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(qine -static)
 
 add_custom_command(
   OUTPUT ${MSG_SRC} ${MSG_H}

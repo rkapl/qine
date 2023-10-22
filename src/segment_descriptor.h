@@ -7,9 +7,9 @@
 
 class Segment;
 
+/* One segment descriptor in the LDT*/
 class SegmentDescriptor {
 public:
-    SegmentDescriptor() noexcept = default;
     SegmentDescriptor(SegmentDescriptor&&) = default;
     SegmentDescriptor& operator=(SegmentDescriptor&&) = default;
     SegmentDescriptor(SegmentId id, Access access, const std::shared_ptr<Segment>& seg);
@@ -27,11 +27,12 @@ public:
     inline FarPointer pointer(uint32_t offset);
     const std::shared_ptr<Segment> segment() const { return m_seg; }
 
-    /* Call neede if underlying descriptor changes */
+    /* Call needed if underlying descriptor changes */
     void update_descriptors();
 private:
     // Because only one id can exist at a time to manage the LDT space
     NoCopy m_no_copy;
+
     void remove_descriptors();
 
     SegmentId m_id;
