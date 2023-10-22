@@ -37,7 +37,6 @@ add_executable(qine
 )
 
 target_include_directories(qine PRIVATE ${PROJECT_BINARY_DIR} ${PROJECT_SOURCE_DIR}/src)
-target_link_libraries(qine -static)
 
 add_custom_command(
   OUTPUT ${MSG_SRC} ${MSG_H}
