@@ -79,9 +79,9 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
     bool handled = false;
 
     if (ctx.reg_es() == Qnx::MAGIC_PTR_SELECTOR) {
-        // hack: migrate to LDT or patch the code
+        // hack: migrate to LDT instead of patching the code
         ctx.reg_es() = Qnx::MAGIC_PTR_SELECTOR | 4;
-        // printf("Migrating to LDT @ %x\n", ctx.reg_eip());
+        //printf("Migrating to LDT @ %x\n", ctx.reg_eip());
         handled = true;
     }
 
@@ -363,25 +363,27 @@ int Emu::signal_sigact(int qnx_sig, uint32_t handler, uint32_t mask)
         return Qnx::QEINVAL;
     }
 
-    struct sigaction sa = {0};
-    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
-    sigfillset(&sa.sa_mask);
-    
-    if (handler == Qnx::QSIG_DFL) {
-        sa.sa_handler = SIG_DFL;
-    } else if (handler == Qnx::QSIG_IGN) {
-        sa.sa_handler = SIG_IGN;
-    } else if (handler == Qnx::QSIG_ERR) {
-        sa.sa_handler = SIG_ERR;
-    } else if (handler == Qnx::QSIG_HOLD) {
-        sa.sa_handler = SIG_HOLD;
-    } else {
-        sa.sa_sigaction = static_handler_generic;
-    }
-    
-    int r = sigaction(host_sig, &sa, NULL);
-    if (r != 0) {
-        return map_errno(r);
+    if (host_sig != SIGSEGV) {
+        struct sigaction sa = {0};
+        sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+        sigfillset(&sa.sa_mask);
+        
+        if (handler == Qnx::QSIG_DFL) {
+            sa.sa_handler = SIG_DFL;
+        } else if (handler == Qnx::QSIG_IGN) {
+            sa.sa_handler = SIG_IGN;
+        } else if (handler == Qnx::QSIG_ERR) {
+            sa.sa_handler = SIG_ERR;
+        } else if (handler == Qnx::QSIG_HOLD) {
+            sa.sa_handler = SIG_HOLD;
+        } else {
+            sa.sa_sigaction = static_handler_generic;
+        }
+        
+        int r = sigaction(host_sig, &sa, NULL);
+        if (r != 0) {
+            return map_errno(r);
+        }
     }
 
     Log::print(Log::SIG, "Registered signal %d, handler %x\n", qnx_sig, handler);   
@@ -390,7 +392,6 @@ int Emu::signal_sigact(int qnx_sig, uint32_t handler, uint32_t mask)
     si->handler_fn = handler;
     si->mask = mask;
     
-    // printf("Registered %d for (%d)\n", host_sig, qnx_sig);
     return Qnx::QEOK;
 }
 
