@@ -27,6 +27,11 @@ class Include:
 class TypeRef:
     name: str
     definition: 'Type' = None
+    array_size: int = 0
+
+    @property
+    def array_suffix(self):
+        return f'[{self.array_size}]' if self.array_size > 0 else ''
 
 @dataclass
 class Msg:
@@ -98,6 +103,7 @@ class Field:
     
 
 primitive_types = [
+    Primitive('char', 'char', 1),
     Primitive('u8', 'uint8_t', 1),
     Primitive('u16', 'uint16_t', 2),
     Primitive('u32', 'uint32_t', 4),
@@ -233,7 +239,7 @@ class MetaInfo:
                 continue
             o.write(f'struct {s.name} {{\n')
             for f in s.fields:
-                o.write(f'   {f.type.definition.c_type} m_{f.name};\n')
+                o.write(f'   {f.type.definition.c_type} m_{f.name}{f.type.array_suffix};\n')
             o.write('} qine_attribute_packed;\n')
 
             o.write(f'extern const Meta::Struct {s.c_def_struct};\n')
@@ -271,13 +277,13 @@ class MetaInfo:
         for s in self.structs:
             for f in s.fields:
                 fd = f.type.definition
-                head = [c(f.name), f'offsetof({s.name}, m_{f.name})', f'sizeof({fd.c_type})']
+                head = [c(f.name), f'offsetof({s.name}, m_{f.name})', f'sizeof({s.name}{f.type.array_suffix})']
                 if isinstance(fd, Primitive):
                     c_def('static', f'Meta::Field {f.c_name}',
-                    head + ['F::' + fd.name.upper(), 'P::' + f.presentation])
+                    head + ['F::' + fd.name.upper(), 'P::' + f.presentation, 'nullptr', f.type.array_size])
                 else:
                     c_def('static', f'Meta::Field {f.c_name}',
-                    head + ['F::SUB', 'P::DEFAULT', '&' + fd.c_def_struct])
+                    head + ['F::SUB', 'P::DEFAULT', '&' + fd.c_def_struct, f.type.array_size])
                 
             c_def('static', f'Meta::Field {s.c_def_fields}[]', [f.c_name for f in s.fields])
 
@@ -329,6 +335,10 @@ class MetaTransformer(lark.Transformer):
     @v_args(inline=True)
     def type_ref(self, ref):
         return TypeRef(str(ref))
+    
+    @v_args(inline=True)
+    def type_ref_array(self, ref, len):
+        return TypeRef(str(ref), array_size=len)
     
     @v_args(inline=True)
     def def_struct(self, name, struct):

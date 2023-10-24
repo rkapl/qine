@@ -45,6 +45,8 @@ private:
     void proc_sigmask(MsgContext &i);
     void proc_osinfo(MsgContext &i);
     void proc_prefix(MsgContext &i);
+    void proc_sid_query(MsgContext &i);
+    void proc_sid_set(MsgContext &i);
 
     void proc_fork(MsgContext &i);
     void proc_spawn(MsgContext &i);

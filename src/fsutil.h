@@ -19,6 +19,9 @@ namespace Fsutil {
     // Given path_starts_with(prefix, path), replace the prefix by new_prefix,
     std::string change_prefix(const char* prefix, const char *new_prefix, const char* path);
 
+    std::string abspath(const char* path);
+
     bool readlink(const char *path, std::string& dst);
     std::string getcwd();
+
 }

@@ -158,6 +158,17 @@ void MainHandler::receive_inner(MsgContext& i) {
         case QnxMsg::proc::msg_prefix::TYPE:
             proc_prefix(i);
             break;
+        case QnxMsg::proc::msg_sid_query::TYPE:
+            switch (hdr.subtype) {
+            case QnxMsg::proc::msg_sid_query::SUBTYPE:
+                proc_sid_query(i);
+                break;
+            case QnxMsg::proc::msg_sid_set::SUBTYPE:
+                proc_sid_set(i);
+                break;
+            default:
+                unhandled_msg();
+        }; break;
 
         case QnxMsg::io::msg_handle::TYPE:
         case QnxMsg::io::msg_io_open::TYPE:
@@ -444,6 +455,7 @@ void MainHandler::proc_psinfo(MsgContext &i)
     ps.ruid = getuid();
     ps.egid = getegid();
     ps.euid = geteuid();
+    ps.sid = proc->sid();
     ps.proc.father = proc->parent_pid();
 
     strlcpy(ps.proc.name, proc->file_name().c_str(), sizeof(ps.proc.name));
@@ -805,6 +817,38 @@ void MainHandler::proc_prefix(MsgContext &i)
         msg.m_path[0] = 0;
     }
     i.msg().write_type(0, &reply);
+}
+
+void MainHandler::proc_sid_query(MsgContext &i)
+{
+    QnxMsg::proc::session_request msg;
+    i.msg().read_type(&msg);
+
+    QnxMsg::proc::session_reply reply;
+    clear(&reply);
+    if (msg.m_sid == i.proc().sid()) {
+        reply.m_status = Qnx::QEOK;
+        reply.m_links = 1;
+        strlcpy(reply.m_name, "sys", sizeof(reply.m_name));
+        reply.m_pid = i.proc().pid();
+        reply.m_sid = i.proc().sid();
+        strlcpy(reply.m_tty_name, ctermid(nullptr), sizeof(reply.m_name));
+    } else {
+        reply.m_status = Qnx::QEOK;
+    }
+    i.msg().write_type(0, &reply);
+}
+
+void MainHandler::proc_sid_set (MsgContext &i) {
+    QnxMsg::proc::session_request msg;
+    i.msg().read_type(&msg);
+
+    int r = setsid();
+    if (r < 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+    } else {
+        i.msg().write_status(Qnx::QEOK);
+    }
 }
 
 void MainHandler::io_rename(MsgContext& i) {

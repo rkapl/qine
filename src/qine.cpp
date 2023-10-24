@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <vector>
 
+#include "fsutil.h"
 #include "process.h"
 #include "loader.h"
 #include "log.h"
@@ -97,9 +98,12 @@ int main(int argc, char **argv) {
     }
     load_executable(slib_path.c_str(), true);
 
-    auto exec_path = PathInfo::mk_qnx_path(argv[0]);
-    proc->path_mapper().map_path_to_host(exec_path);
-    load_executable(exec_path.host_path(), false);
+    if (Fsutil::is_abs(argv[0])) {
+        auto exec_path = proc->path_mapper().map_path_to_host(argv[0]);
+        load_executable(exec_path.host_path(), false);
+    } else {
+        load_executable(argv[0], false);
+    }
 
     proc->setup_startup_context(argc, argv);
 

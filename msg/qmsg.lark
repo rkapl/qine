@@ -24,7 +24,8 @@ def_msg: "msg" ID  "{" type [subtype] request reply "}"
 ?embedded_struct: struct_body -> embedded_struct_body
     | type_ref ";"
 
-type_ref: ID
+type_ref: ID 
+    | ID "[" NUMBER "]" -> type_ref_array
 
 def_struct: "struct" ID struct_body
 

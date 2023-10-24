@@ -77,6 +77,11 @@ Qnx::pid_t Process::nid() const
     return 0x1;
 }
 
+Qnx::sid_t Process::sid() const
+{
+    return 0x1;
+}
+
 Qnx::pid_t Process::child_pid() {
     return 0x1003;
 }
@@ -304,6 +309,7 @@ void Process::setup_startup_context(int argc, char **argv)
     }
 
     /* Argv */
+    m_file_name = argv[0];
     ctx.push_stack(0);
     for (int i = argc - 1; i >= 0; i--) {
         alloc.push_string(argv[i]);

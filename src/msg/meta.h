@@ -30,7 +30,7 @@ namespace Meta {
 
     struct Field {
         enum class Format {
-            SUB, U8, U16, U32, I8, I16, I32,  PID, NID, FD, PATH, TERM_CC, TIME, STDFDS
+            SUB, CHAR, U8, U16, U32, I8, I16, I32,  PID, NID, FD, PATH, TERM_CC, TIME, STDFDS
         };
         enum class Presentation {
             DEFAULT, HEX, OCT
@@ -42,6 +42,7 @@ namespace Meta {
         Format m_format;
         Presentation m_presentation;
         const Struct *m_typeref;
+        size_t m_array_len;
     };
 
     struct Message {

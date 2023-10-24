@@ -65,6 +65,7 @@ public:
     Qnx::pid_t pid() const;
     Qnx::pid_t parent_pid() const;
     Qnx::nid_t nid() const;
+    Qnx::sid_t sid() const;
 
     const std::vector<std::string>& self_call() const;
 

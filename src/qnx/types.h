@@ -16,6 +16,7 @@ namespace Qnx {
     typedef int16_t muid_t;          /* used in messages */
     typedef uint16_t msg_t;  /* Used for message passing     */
     typedef int32_t nid_t;      /* Used for network IDs         */
+    typedef int16_t sid_t;   
 
     typedef uint16_t fd_t;
 

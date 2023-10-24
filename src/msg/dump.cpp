@@ -37,6 +37,13 @@ static void print_field(FILE* s, const Meta::Field& f, int indent, size_t offset
             fputs("   ", s);
             fprintf(s, "}");
             break;
+        case Meta::Field::Format::CHAR:
+            if (f.m_array_len == 0) {
+                fprintf(s, "'%c'", *static_cast<const char*>(v));
+            } else {
+                fprintf(s, "\"%s\"", static_cast<const char*>(v));
+            }
+            break;
         case Meta::Field::Format::U8:
         case Meta::Field::Format::I8:
             print_int(s, f, *static_cast<const uint8_t*>(v));

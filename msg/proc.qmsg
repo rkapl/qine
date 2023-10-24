@@ -368,3 +368,41 @@ msg prefix {
         prefix: path;
     }
 }
+
+struct session_request {
+    type: u16;
+    subtype: u16;
+    sid: u16;
+    padd: u16;
+    padd: u16;
+    padd: u16;
+    name: char[17];
+}
+
+struct session_reply {
+    status: u16;
+    padd: u16;
+    pid: pid;
+    padd: u16;
+    sid: u16;
+    padd: u16;
+    links: u16;
+    padd: u32;
+    name: char[15];
+    tty_name: char[32];
+}
+
+msg sid_query {
+    type: 40;
+    subtype: 2;
+    request session_request;
+    reply session_reply;
+}
+
+msg sid_set {
+    type: 40;
+    subtype: 0;
+
+    request session_request;
+    reply session_reply;
+}
