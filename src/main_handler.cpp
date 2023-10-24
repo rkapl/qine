@@ -58,8 +58,9 @@ void MainHandler::receive_inner(MsgContext& i) {
     Qnx::MsgHeader hdr;
     i.msg().read_type(&hdr);
 
-    auto unhandled_msg = [&hdr] {
+    auto unhandled_msg = [&hdr, &i] {
         Log::print(Log::UNHANDLED, "Unhandled message %xh:%xh\n", hdr.type, hdr.subtype);
+        i.msg().write_status(Qnx::QENOSYS);
     };
 
     switch (hdr.type) {
