@@ -17,6 +17,8 @@ namespace Qnx {
     typedef uint16_t msg_t;  /* Used for message passing     */
     typedef int32_t nid_t;      /* Used for network IDs         */
 
+    typedef uint16_t fd_t;
+
     struct mxfer_entry {
         uint32_t mxfer_off;
         uint16_t mxfer_seg;

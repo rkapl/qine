@@ -3,7 +3,7 @@
 #include "log.h"
 #include "path_mapper.h"
 #include "types.h"
-#include "util.h"
+#include "fsutil.h"
 
 static void pop_path(std::string& dst) {
     while (dst.back() != '/' && !dst.empty()) {
@@ -41,8 +41,9 @@ static std::string normalize_path(const char *path) {
                 segments--;
             }
         } else {
+            // add new part with normalization
             if (part_len > 0) {
-                if (dst.back() != '/') {
+                if ( !dst.empty() && dst.back() != '/') {
                     dst.push_back('/');
                 }
                 dst.append(path, part_len);
@@ -131,12 +132,59 @@ bool PathMapper::has_qnx_prefix(const std::string& pfx) {
 }
 
 void PathMapper::map_path_to_qnx(PathInfo &map) {
+    assert(map.m_host_valid);
+    // TODO: if host path is not valid, readlink it from proc
+    if (map.m_qnx_valid)
+        return;
+
+    Prefix *pfx = NULL;
+    // find the most general QNX prefix
+    for (auto& c: m_prefixes) {
+        if (Fsutil::path_starts_with(map.host_path(), c.m_host_path.c_str())) {
+            if (!pfx || c.m_qnx_path.length() < pfx->m_qnx_path.length())
+                pfx = &c;
+        }
+    }
+    if (Fsutil::path_starts_with(map.host_path(), m_root.m_host_path.c_str())) {
+        pfx = &m_root;
+    }
+
+    if (pfx == nullptr) {
+        map.m_qnx_valid = true;
+        map.m_qnx_unmappable = true;
+        map.m_qnx_path.clear();
+        map.m_qnx_path.append("/unmapped");
+        map.m_qnx_path.append(map.m_host_path);
+        Log::if_enabled(Log::MAP, [&](FILE *stream) {
+            fprintf(stream, "Unmappable host:%s\n", map.host_path());
+        });
+        return;
+    }
+
     map.m_qnx_valid = true;
+    map.m_qnx_unmappable = false;
+    map.m_qnx_path.clear();
+    map.m_qnx_path = Fsutil::change_prefix(pfx->m_host_path.c_str(), pfx->m_qnx_path.c_str(), map.m_host_path.c_str());
+
+    Log::if_enabled(Log::MAP, [&](FILE *stream) {
+        fprintf(stream, "Mapped host:%s -> qnx:%s (via %s)\n", map.host_path(), map.qnx_path(), pfx->m_qnx_path.c_str());
+    });
+
+    map.m_qnx_valid = true;
+
     map.m_qnx_unmappable = true;
     map.m_prefix = NULL;
 }
 
+PathInfo PathMapper::map_path_to_qnx(const char *path, bool normalized)
+{
+    auto p = PathInfo::mk_host_path(path, normalized);
+    map_path_to_qnx(p);
+    return p;
+}
+
 void PathMapper::map_path_to_host(PathInfo &map) {
+    assert(map.m_qnx_valid);
     if (map.m_host_valid)
         return;
         
@@ -145,7 +193,7 @@ void PathMapper::map_path_to_host(PathInfo &map) {
 
     // find the most specific prefix
     for (auto& c: m_prefixes) {
-        if (starts_with(map.qnx_path(), c.m_qnx_path.c_str())) {
+        if (Fsutil::path_starts_with(map.qnx_path(), c.m_qnx_path.c_str())) {
             if (c.m_qnx_path.length() > pfx->m_qnx_path.length())
                 pfx = &c;
         }
@@ -153,9 +201,7 @@ void PathMapper::map_path_to_host(PathInfo &map) {
 
     map.m_host_valid = true;
     map.m_host_path.clear();
-    map.m_host_path.append(pfx->m_host_path);
-    map.m_host_path.push_back('/');
-    map.m_host_path.append(map.m_qnx_path.substr(pfx->m_qnx_path.length()));
+    map.m_host_path = Fsutil::change_prefix(pfx->m_qnx_path.c_str(), pfx->m_host_path.c_str(), map.m_qnx_path.c_str());
     Log::if_enabled(Log::MAP, [&](FILE *stream) {
         fprintf(stream, "Mapped qnx:%s -> host:%s (via %s)\n", map.qnx_path(), map.host_path(), pfx->m_qnx_path.c_str());
     });

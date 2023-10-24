@@ -1,11 +1,8 @@
 #include "util.h"
 
-bool starts_with(const char *string, const char *prefix) {
-    while (*prefix) {
-        if (*prefix != *string)
-            return false;
+bool starts_with(std::string_view string, std::string_view prefix) {
+    if (prefix.length() > string.length())
+        return false;
 
-        prefix++; string++;
-    }
-    return true;
+    return prefix == string.substr(0, prefix.length());
 }

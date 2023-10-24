@@ -10,31 +10,31 @@
 #include <sys/syscall.h>
 
 #include "compiler.h"
-#include "context.h"
+#include "guest_context.h"
 #include "process.h"
 #include "types.h"
 
-Context::Context(ucontext_t *ctx, ExtraContext *ectx): m_ctx(ctx), m_ectx(ectx), m_proc(Process::current()) {}
+GuestContext::GuestContext(ucontext_t *ctx, ExtraContext *ectx): m_ctx(ctx), m_ectx(ectx), m_proc(Process::current()) {}
 
-void* Context::translate(SegmentRegister s, uint32_t addr, uint32_t size, RwOp write)
+void* GuestContext::translate(SegmentRegister s, uint32_t addr, uint32_t size, RwOp write)
 {
     return m_proc->translate_segmented(FarPointer(get_seg(s), addr), size, write);
 }
 
-void Context::read_data(SegmentRegister s, void *dst, uint32_t addr, uint32_t size)
+void GuestContext::read_data(SegmentRegister s, void *dst, uint32_t addr, uint32_t size)
 {
 
     auto linear = m_proc->translate_segmented(FarPointer(get_seg(s), addr), size, RwOp::READ);
     memcpy(dst, linear, size);
 }
 
-void Context::write_data(SegmentRegister s, const void *src, uint32_t addr, uint32_t size)
+void GuestContext::write_data(SegmentRegister s, const void *src, uint32_t addr, uint32_t size)
 {
     auto linear = m_proc->translate_segmented(FarPointer(get_seg(s), addr), size, RwOp::WRITE);
     memcpy(linear, src, size);
 }
 
-uint16_t Context::get_seg(SegmentRegister r) {
+uint16_t GuestContext::get_seg(SegmentRegister r) {
     switch (r) {
         default:
         case CS:
@@ -50,22 +50,22 @@ uint16_t Context::get_seg(SegmentRegister r) {
     }
 }
 
-void Context::push_stack(uint32_t value) {
+void GuestContext::push_stack(uint32_t value) {
     reg_esp() -= 4;
     write(SS, reg_esp(), value);
 }
 
-uint32_t Context::pop_stack() {
+uint32_t GuestContext::pop_stack() {
     auto v = read<uint32_t>(SS, reg_esp());
     reg_esp() += 4;
     return v;
 }
 
-void Context::dump(FILE *s, size_t stack) {
+void GuestContext::dump(FILE *s, size_t stack) {
     auto cs = reg_cs();
     auto ip = reg_eip();
     try {
-        auto linear = translate(Context::CS, ip, 0);
+        auto linear = translate(GuestContext::CS, ip, 0);
         fprintf(s, "context %x:%x, linear %p\n", cs, ip, linear);
     } catch (const GuestStateException& e) {
         fprintf(s, "context %x:%x, %s\n", cs, ip, e.what());
@@ -113,7 +113,7 @@ void Context::dump(FILE *s, size_t stack) {
     #endif
 }
 
-void Context::save_context()
+void GuestContext::save_context()
 {
     auto esp = reg_esp();
     /* pushad */
@@ -135,7 +135,7 @@ void Context::save_context()
     push_stack(reg_ss());
 }
 
-void Context::restore_context()
+void GuestContext::restore_context()
 {
     reg_ss() = pop_stack();
     reg_gs() = pop_stack();
@@ -155,7 +155,7 @@ void Context::restore_context()
     reg_eax() = pop_stack();
 }
 
-std::string Context::read_string(FarPointer ptr, size_t size) {
+std::string GuestContext::read_string(FarPointer ptr, size_t size) {
     std::string acc;
     try {
         auto mem = static_cast<const char*>(m_proc->translate_segmented(ptr, size, RwOp::READ));

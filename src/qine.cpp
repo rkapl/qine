@@ -79,6 +79,12 @@ int main(int argc, char **argv) {
         proc->initialize(std::move(self_call));
     } catch (const ConfigurationError& e) {
         fprintf(stderr, "%s\n", e.m_msg.c_str());
+        return 1;
+    }
+
+    if (argc == 0) {
+        fprintf(stderr, "program arguments expected\n");
+        return 1;
     }
 
     std::string slib_path;

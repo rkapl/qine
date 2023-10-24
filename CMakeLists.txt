@@ -19,7 +19,8 @@ add_executable(qine
   src/intrusive_list.h
   src/qine.cpp
   src/emu.cpp src/emu.h
-  src/context.cpp src/context.h
+  src/fsutil.h src/fsutil.cpp
+  src/guest_context.cpp src/guest_context.h
   src/loader.h src/loader.cpp src/loader_format.h
   src/log.h src/log.cpp
   src/main_handler.h src/main_handler.cpp

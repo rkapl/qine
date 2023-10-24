@@ -1,13 +1,4 @@
 #include <algorithm>
-#include <asm-generic/errno-base.h>
-#include <asm-generic/errno.h>
-#include <bits/types/FILE.h>
-#include <cerrno>
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include <stdexcept>
 #include <string>
 #include <sys/ucontext.h>
@@ -32,10 +23,11 @@
 #include "msg_handler.h"
 #include "segment.h"
 #include "segment_descriptor.h"
-#include "context.h"
+#include "guest_context.h"
 #include "types.h"
 #include "log.h"
 #include "util.h"
+#include "fsutil.h"
 
 Process* Process::m_current = nullptr;
 
@@ -63,7 +55,7 @@ void Process::initialize(std::vector<std::string>&& self_call) {
     }
     m_file_name.resize(strlen(m_file_name.data()));
 
-    m_startup_context = Context(&m_startup_context_main, &m_startup_context_extra);
+    m_startup_context = GuestContext(&m_startup_context_main, &m_startup_context_extra);
     memset(&m_startup_context_main, 0xcc, sizeof(m_startup_context_main));
     memset(&m_startup_context_extra, 0xcc, sizeof(m_startup_context_extra));
     m_emu.init();
@@ -171,7 +163,7 @@ void Process::setup_magic(SegmentDescriptor *data_sd, SegmentAllocator& alloc)
 
 }
 
-void Process::handle_msg(MsgInfo& m)
+void Process::handle_msg(MsgContext& m)
 {
     auto& msg = m.msg();
     Qnx::MsgHeader hdr;
@@ -239,19 +231,6 @@ void Process::handle_msg(MsgInfo& m)
     });
 }
 
-static std::string cpp_getcwd() {
-    std::string s;
-    s.resize(Qnx::QPATH_MAX_T);
-    if (getcwd(s.data(), s.length()) != NULL) {
-        return s;
-    } else {
-        if (errno == ERANGE || errno == ENAMETOOLONG) {
-            throw CwdTooLong();
-        }
-        throw std::logic_error("getcwd failed");
-    }
-}
-
 void Process::setup_startup_context(int argc, char **argv)
 {
     auto& ctx = m_startup_context;
@@ -305,8 +284,10 @@ void Process::setup_startup_context(int argc, char **argv)
     }
 
     if (env_cwd.empty()) {
+        std::string host_cwd(Fsutil::getcwd());
+        auto cwd_path = path_mapper().map_path_to_qnx(host_cwd.c_str());
         env_cwd.append(env_cwd_key);
-        env_cwd.append(get_current_dir_name());
+        env_cwd.append(cwd_path.qnx_path());
     }
     push_env(env_cwd.c_str());
 

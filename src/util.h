@@ -1,3 +1,6 @@
 #pragma once
 
-bool starts_with(const char *string, const char *prefix);
+#include <string_view>
+
+// Check if string starts with a given prefix.
+bool starts_with(std::string_view string, std::string_view prefix);

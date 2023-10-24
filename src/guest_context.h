@@ -37,16 +37,16 @@ public:
 };
 
 /* Wrapper around ucontext_t with helpers */
-struct Context {
+struct GuestContext {
 public:
     enum SegmentRegister {
         CS, DS, ES, FS, SS
     };
 
-    Context(ucontext_t *ctx, ExtraContext *exct);
-    Context(const Context&) = default;
-    Context& operator=(const Context&) = default;
-    Context() {}
+    GuestContext(ucontext_t *ctx, ExtraContext *exct);
+    GuestContext(const GuestContext&) = default;
+    GuestContext& operator=(const GuestContext&) = default;
+    GuestContext() {}
 
     void* translate(SegmentRegister, uint32_t addr, uint32_t size = 0, RwOp write = RwOp::READ);
     void read_data(SegmentRegister s, void *dst, uint32_t addr, uint32_t size);
@@ -132,18 +132,18 @@ private:
 };
 
 template<class T>
-T Context::read(SegmentRegister s, uint32_t addr) {
+T GuestContext::read(SegmentRegister s, uint32_t addr) {
     T tmp;
     read_data(s, &tmp, addr, sizeof(T));
     return tmp;
 }
 
 template<class T>
-void Context::write(SegmentRegister s, uint32_t addr, const T& value)
+void GuestContext::write(SegmentRegister s, uint32_t addr, const T& value)
 {
     write_data(s, &value, addr, sizeof(T));
 }
 
-Process *Context::proc() const {
+Process *GuestContext::proc() const {
     return m_proc;
 }

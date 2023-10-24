@@ -25,7 +25,7 @@
 #include "segment.h"
 #include "segment_descriptor.h"
 #include "types.h"
-#include "context.h"
+#include "guest_context.h"
 #include "msg.h"
 
 #include <gen_msg/proc.h>
@@ -69,7 +69,7 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
     sigaddset(&ss, SIGSEGV);
     sigprocmask(SIG_UNBLOCK, &ss, nullptr);
 
-    auto ctx = Context(reinterpret_cast<ucontext_t*>(uctx_void), &ectx);
+    auto ctx = GuestContext(reinterpret_cast<ucontext_t*>(uctx_void), &ectx);
     if ((ctx.reg_cs() & SegmentDescriptor::SEL_LDT) == 0) {
         debug_hook_problem();
         fprintf(stderr, "Sigsegv in host code\n");
@@ -85,7 +85,7 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
         handled = true;
     }
 
-    if (ctx.read<uint8_t>(Context::CS, eip) == 0xCD && ctx.read<uint8_t>(Context::CS, eip + 1) == 0xF2) {
+    if (ctx.read<uint8_t>(GuestContext::CS, eip) == 0xCD && ctx.read<uint8_t>(GuestContext::CS, eip + 1) == 0xF2) {
         dispatch_syscall(ctx);
         ctx.reg_eip() += 2;
         handled = true;
@@ -109,7 +109,7 @@ qine_no_tls void Emu::handler_generic(int sig, siginfo_t *info, void *uctx_void)
     m_tls_fixup.restore();
     
     // now we have normal C environment
-    auto ctx = Context(reinterpret_cast<ucontext_t*>(uctx_void), &ectx);
+    auto ctx = GuestContext(reinterpret_cast<ucontext_t*>(uctx_void), &ectx);
 
 
     int qnx_sig = map_sig_host_to_qnx(sig);
@@ -129,7 +129,7 @@ qine_no_tls void Emu::handler_generic(int sig, siginfo_t *info, void *uctx_void)
  * This functions is called on exit from a host signal and is responsible 
  * for setting up QNX signal state if there is a pending signal.
  */
-void Emu::signal_tail(Context& ctx) {
+void Emu::signal_tail(GuestContext& ctx) {
     auto activesig = (~m_sigmask) & m_sigpend;
 
     if (activesig == 0)
@@ -185,7 +185,7 @@ void Emu::signal_tail(Context& ctx) {
     Log::print(Log::SIG, "raised signal %d\n", qnx_sig);
 }
 
-void Emu::syscall_sigreturn(Context &ctx)
+void Emu::syscall_sigreturn(GuestContext &ctx)
 {
     uint32_t mask = ctx.pop_stack();
     ctx.restore_context();
@@ -194,7 +194,7 @@ void Emu::syscall_sigreturn(Context &ctx)
 }
 
 
-void Emu::dispatch_syscall(Context& ctx)
+void Emu::dispatch_syscall(GuestContext& ctx)
 {
     uint8_t syscall = ctx.reg_al();
     switch (syscall) {
@@ -217,7 +217,7 @@ void Emu::dispatch_syscall(Context& ctx)
     }
 }
 
-void Emu::syscall_sendfdmx(Context &ctx)
+void Emu::syscall_sendfdmx(GuestContext &ctx)
 {
     auto proc = Process::current();
     uint32_t ds = ctx.reg_ds();
@@ -228,7 +228,7 @@ void Emu::syscall_sendfdmx(Context &ctx)
     GuestPtr recv_data = ctx.reg_esi();
 
     Msg msg(proc, send_parts, FarPointer(ds, send_data),  recv_parts, FarPointer(ds, recv_data));
-    MsgInfo info;
+    MsgContext info;
     info.m_ctx = &ctx;
     info.m_msg = &msg;
     info.m_proc = proc;
@@ -238,7 +238,7 @@ void Emu::syscall_sendfdmx(Context &ctx)
     proc->handle_msg(info);
 }
 
-void Emu::syscall_sendmx(Context &ctx)
+void Emu::syscall_sendmx(GuestContext &ctx)
 {
     auto proc = Process::current();
     
@@ -251,7 +251,7 @@ void Emu::syscall_sendmx(Context &ctx)
 
     Msg msg(Process::current(), send_parts, FarPointer(ds, send_data),  recv_parts, FarPointer(ds, recv_data));
     // TODO: handle faults etc.
-    MsgInfo info;
+    MsgContext info;
     info.m_ctx = &ctx;
     info.m_msg = &msg;
     info.m_proc = proc;
@@ -261,7 +261,7 @@ void Emu::syscall_sendmx(Context &ctx)
     proc->handle_msg(info);
 }
 
-void Emu::syscall_kill(Context &ctx)
+void Emu::syscall_kill(GuestContext &ctx)
 {
     int pid = ctx.reg_edx();
     int qnx_signo = ctx.reg_ebx();
@@ -303,7 +303,7 @@ qine_no_tls void Emu::static_handler_user(int sig, siginfo_t *info, void *uctx)
     ExtraContext ectx;
     ectx.from_cpu();
     auto sig_ctx = reinterpret_cast<ucontext_t*>(uctx);
-    Context ctx(sig_ctx, &ectx);
+    GuestContext ctx(sig_ctx, &ectx);
     auto proc = Process::current();
 
     #define SYNC(x) ctx.reg_##x() = proc->m_startup_context.reg_##x()

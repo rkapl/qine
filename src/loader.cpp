@@ -17,7 +17,7 @@
 #include "loader_format.h"
 #include "segment_descriptor.h"
 #include "types.h"
-#include "context.h"
+#include "guest_context.h"
 #include "log.h"
 
 static_assert(sizeof(lmf_header) == 48, "lmf_header size mimsatch");

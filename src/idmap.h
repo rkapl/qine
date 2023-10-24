@@ -28,6 +28,7 @@ public:
     template <class C> T* alloc_or_get_at(size_t i, C&& creator);
     template <class C> T* alloc_starting_at(size_t i, C&& creator);
 
+    Id search(Id from, bool used);
     T* operator[](Id i);
     void free(Id i);
     ~IdMap();
@@ -38,7 +39,6 @@ private:
     // Grow the data and map to a given size. The specified size must be less than max.
     void grow(size_t to_size);
     // Look for a free item, either used or unused (as specified). Returns INVAL if not found
-    Id search(Id from, bool used);
 
     size_t m_max;
     std::vector<std::unique_ptr<T>> m_data;
@@ -98,15 +98,6 @@ void IdMap<T>::free(Id i) {
     m_data[i].release();
 }
 
-
-// private:
-template <class T> template <class C> T* IdMap<T>::emplace(size_t i, C&& creator) {
-    grow(i + 1);
-    T* p = creator(i);
-    m_data[i].reset(p);
-    return p;
-}
-
 template <class T>
 auto IdMap<T>::search(Id from, bool used) -> Id {
     for (; from < m_data.size(); from++) { 
@@ -119,6 +110,14 @@ auto IdMap<T>::search(Id from, bool used) -> Id {
         return from;
     }
     return INVAL;
+}
+
+// private:
+template <class T> template <class C> T* IdMap<T>::emplace(size_t i, C&& creator) {
+    grow(i + 1);
+    T* p = creator(i);
+    m_data[i].reset(p);
+    return p;
 }
 
 template <class T>

@@ -16,8 +16,9 @@ public:
 
     // runtime
 
-    /* Populate the m_qnx_path mapping in path info. May fail and produce unmapped result. */
+    /* Populate the m_qnx_path mapping in path info. Cannot fail, but will produce /unmapped/* path and set a flag.. */
     void map_path_to_qnx(PathInfo &map);
+    PathInfo map_path_to_qnx(const char *path, bool normalized=false);
 
     /* Populate the m_host_path mapping in path info. Cannot fail */
     void map_path_to_host(PathInfo &map);

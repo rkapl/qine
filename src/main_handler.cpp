@@ -19,6 +19,7 @@
 #include <termios.h>
 #include <vector>
 
+#include "fsutil.h"
 #include "gen_msg/common.h"
 #include "gen_msg/dev.h"
 #include "gen_msg/fsys.h"
@@ -45,7 +46,7 @@
 #include <gen_msg/io.h>
 
 
-void MainHandler::receive(MsgInfo& i) {
+void MainHandler::receive(MsgContext& i) {
     try {
         receive_inner(i);
     } catch(const BadFdException&) {
@@ -53,7 +54,7 @@ void MainHandler::receive(MsgInfo& i) {
     }
 }
 
-void MainHandler::receive_inner(MsgInfo& i) {
+void MainHandler::receive_inner(MsgContext& i) {
     Qnx::MsgHeader hdr;
     i.msg().read_type(&hdr);
 
@@ -249,7 +250,7 @@ void MainHandler::receive_inner(MsgInfo& i) {
     }
 }
 
-void MainHandler::proc_terminate(MsgInfo& i)
+void MainHandler::proc_terminate(MsgContext& i)
 {
     QnxMsg::proc::terminate_request msg;
     i.msg().read_type(&msg);
@@ -257,7 +258,7 @@ void MainHandler::proc_terminate(MsgInfo& i)
     exit(msg.m_status);
 }
 
-void MainHandler::proc_time(MsgInfo& i)
+void MainHandler::proc_time(MsgContext& i)
 {
     QnxMsg::proc::time_request msg;
     i.msg().read_type(&msg);
@@ -279,7 +280,7 @@ void MainHandler::proc_time(MsgInfo& i)
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::proc_fd_attach(MsgInfo& i)
+void MainHandler::proc_fd_attach(MsgContext& i)
 {
     QnxMsg::proc::fd_request msg;
     i.msg().read_type(&msg);
@@ -298,7 +299,7 @@ void MainHandler::proc_fd_attach(MsgInfo& i)
     }
 }
 
-void MainHandler::proc_fd_detach(MsgInfo& i) {
+void MainHandler::proc_fd_detach(MsgContext& i) {
     QnxMsg::proc::fd_request msg;
     i.msg().read_type(&msg);
 
@@ -309,27 +310,34 @@ void MainHandler::proc_fd_detach(MsgInfo& i) {
     }
 }
 
-void MainHandler::proc_fd_query(MsgInfo& i) {
+void MainHandler::proc_fd_query(MsgContext& i) {
     QnxMsg::proc::fd_request msg;
     i.msg().read_type(&msg);
 
+    auto fd = i.proc().fds().fd_query(msg.m_fd);
+
     QnxMsg::proc::fd_query_reply reply;
-    memset(&reply, 0, sizeof(reply));
-    reply.m_status = 0;
-    reply.m_info.m_handle = 0;
-    reply.m_info.m_pid = 1;
-    reply.m_info.m_vid = reply.m_info.m_pid;
-    reply.m_info.m_nid = 0;
-    reply.m_fd = msg.m_fd;
+    clear(&reply);
+    if (fd) {
+        reply.m_status = Qnx::QEOK;
+        reply.m_info.m_handle = fd->m_handle;
+        reply.m_info.m_pid = fd->m_pid;
+        reply.m_info.m_vid = fd->m_vid;
+        reply.m_info.m_nid = fd->m_nid;
+        reply.m_info.m_flags = fd->m_flags;
+        reply.m_fd = fd->m_fd;
+    } else {
+        reply.m_status = Qnx::QEINVAL;
+    }
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::proc_fd_action1(MsgInfo &i) {
-    // STUB
+void MainHandler::proc_fd_action1(MsgContext &i) {
+    // STUB, not sure what this is
     i.msg().write_status(Qnx::QEOK);
 }
 
-void MainHandler::proc_segment_alloc(MsgInfo& i)
+void MainHandler::proc_segment_alloc(MsgContext& i)
 {
     QnxMsg::proc::segment_request msg;
     i.msg().read_type(&msg);
@@ -350,7 +358,7 @@ void MainHandler::proc_segment_alloc(MsgInfo& i)
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::proc_segment_realloc(MsgInfo& i)
+void MainHandler::proc_segment_realloc(MsgContext& i)
 {
     QnxMsg::proc::segment_request msg;
     i.msg().read_type(&msg);
@@ -379,19 +387,19 @@ void MainHandler::proc_segment_realloc(MsgInfo& i)
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::proc_open(MsgInfo& i) {
+void MainHandler::proc_open(MsgContext& i) {
     /* proc_open does not actually open a file, just resolves the file name*/
     QnxMsg::proc::open_request msg;
     i.msg().read_type(&msg);
 
-    /* and we do not do any resolution, reply back with the same path  */
+    /* and we do not do any resolution, reply back with the same path and our main server */
     msg.m_type = Qnx::QEOK;
     msg.m_open.m_pid = 1;
     msg.m_open.m_nid = i.ctx().proc()->nid();
     i.msg().write_type(0, &msg);
 }
 
-void MainHandler::proc_vc_attach(MsgInfo& i) 
+void MainHandler::proc_vc_attach(MsgContext& i) 
 {
     auto proc = i.ctx().proc();
     QnxMsg::proc::vc vc;
@@ -415,7 +423,7 @@ void MainHandler::proc_vc_attach(MsgInfo& i)
 }
 
 
-void MainHandler::proc_vc_detach(MsgInfo& i) 
+void MainHandler::proc_vc_detach(MsgContext& i) 
 {
     /* This is stubbed, because QNX/slib seems to have a bug where the stat result
      * overwrites the NID in the message and it then mistakenly calls vc_detach.*/
@@ -424,7 +432,7 @@ void MainHandler::proc_vc_detach(MsgInfo& i)
     i.msg().write_status(Qnx::QEOK);
 }
 
-void MainHandler::proc_psinfo(MsgInfo &i)
+void MainHandler::proc_psinfo(MsgContext &i)
 {
     auto proc = Process::current();
     // known user: wlink tries to find its own exec (via _cmdname   )
@@ -443,7 +451,7 @@ void MainHandler::proc_psinfo(MsgInfo &i)
     i.msg().write_type(2, &ps);
 }
 
-void MainHandler::proc_sigtab(MsgInfo &i) {
+void MainHandler::proc_sigtab(MsgContext &i) {
     auto proc = Process::current();
     QnxMsg::proc::signal_request msg;
     i.msg().read_type(&msg);
@@ -454,7 +462,7 @@ void MainHandler::proc_sigtab(MsgInfo &i) {
     i.msg().write_status(Qnx::QEOK);
 }
 
-void MainHandler::proc_sigact(MsgInfo &i) {
+void MainHandler::proc_sigact(MsgContext &i) {
     QnxMsg::proc::signal_request msg;
     i.msg().read_type(&msg);
 
@@ -469,7 +477,7 @@ void MainHandler::proc_sigact(MsgInfo &i) {
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::proc_sigmask(MsgInfo &i) {
+void MainHandler::proc_sigmask(MsgContext &i) {
     QnxMsg::proc::signal_request msg;
     i.msg().read_type(&msg);
 
@@ -482,7 +490,7 @@ void MainHandler::proc_sigmask(MsgInfo &i) {
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::proc_getid(MsgInfo &i) {
+void MainHandler::proc_getid(MsgContext &i) {
     auto proc = Process::current();
     QnxMsg::proc::getid_reply msg;
     memset(&msg, 0, sizeof(msg));
@@ -497,7 +505,7 @@ void MainHandler::proc_getid(MsgInfo &i) {
     i.msg().write_type(0, &msg);
 }
 
-void MainHandler::proc_osinfo(MsgInfo &i) {
+void MainHandler::proc_osinfo(MsgContext &i) {
     auto proc = Process::current();
     Qnx::osinfo osinfo;
     memset(&osinfo, 0, sizeof(osinfo));
@@ -516,7 +524,7 @@ void MainHandler::proc_osinfo(MsgInfo &i) {
     i.msg().write_type(2, &osinfo);
 }
 
-void MainHandler::proc_fork(MsgInfo &i) {
+void MainHandler::proc_fork(MsgContext &i) {
     QnxMsg::proc::loaded_reply reply;
     clear(&reply);
 
@@ -534,7 +542,7 @@ void MainHandler::proc_fork(MsgInfo &i) {
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::proc_spawn(MsgInfo &i) {
+void MainHandler::proc_spawn(MsgContext &i) {
     QnxMsg::proc::loaded_reply reply;
     clear(&reply);
 
@@ -552,7 +560,7 @@ void MainHandler::proc_spawn(MsgInfo &i) {
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::proc_exec(MsgInfo &i) {
+void MainHandler::proc_exec(MsgContext &i) {
     QnxMsg::proc::loaded_reply reply;
     clear(&reply);
 
@@ -561,12 +569,12 @@ void MainHandler::proc_exec(MsgInfo &i) {
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::proc_exec_common(MsgInfo &i) {
+void MainHandler::proc_exec_common(MsgContext &i) {
     QnxMsg::proc::spawn msg;
     i.msg().read_type(&msg);
     MsgStreamReader r(&i.msg(), sizeof(QnxMsg::proc::spawn));
 
-    // copy into an owned buf and remember offsets
+    // copy into an owned buf and remember offsets into the buf
     std::vector<char> buf;
     std::vector<size_t > argvo;
     std::vector<size_t > envo;
@@ -660,7 +668,7 @@ void MainHandler::proc_exec_common(MsgInfo &i) {
     execve(final_argv[0], const_cast<char**>(final_argv.data()), const_cast<char**>(envp.data()));
 }
 
-void MainHandler::proc_wait(MsgInfo &i) {
+void MainHandler::proc_wait(MsgContext &i) {
     QnxMsg::proc::wait_request msg;
     i.msg().read_type(&msg);
 
@@ -711,7 +719,7 @@ uint32_t MainHandler::map_file_flags_to_host(uint32_t oflag) {
     return mapped_oflags;
 }
 
-void MainHandler::io_open(MsgInfo& i) {
+void MainHandler::io_open(MsgContext& i) {
     /* The oter requests have the same format */
     QnxMsg::io::io_open_request msg;
     i.msg().read_type(&msg);
@@ -734,6 +742,10 @@ void MainHandler::io_open(MsgInfo& i) {
             if (msg.m_open.m_mode & Qnx::QS_IFLNK) 
                 mapped_oflags |= O_NOFOLLOW;
         }
+    }
+
+    if (fd->is_close_on_exec()) {
+        mapped_oflags |= O_CLOEXEC;
     }
 
     fd->m_path = PathInfo::mk_qnx_path(msg.m_file, true);
@@ -764,7 +776,7 @@ void MainHandler::io_open(MsgInfo& i) {
     i.msg().write_status(Qnx::QEOK);
 }
 
-void MainHandler::io_chdir(MsgInfo& i) {
+void MainHandler::io_chdir(MsgContext& i) {
     QnxMsg::io::io_open_request msg;
     i.msg().read_type(&msg);
 
@@ -778,7 +790,7 @@ void MainHandler::io_chdir(MsgInfo& i) {
     }
 }
 
-void MainHandler::proc_prefix(MsgInfo &i)
+void MainHandler::proc_prefix(MsgContext &i)
 {
     QnxMsg::proc::prefix_request msg;
     i.msg().read_type(&msg);
@@ -795,11 +807,14 @@ void MainHandler::proc_prefix(MsgInfo &i)
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::io_rename(MsgInfo& i) {
+void MainHandler::io_rename(MsgContext& i) {
     QnxMsg::io::rename_request msg;
     i.msg().read_type(&msg);
 
-    int r = rename(msg.m_from, msg.m_to);
+    auto from_path = i.proc().path_mapper().map_path_to_host(msg.m_from);
+    auto to_path = i.proc().path_mapper().map_path_to_host(msg.m_to);
+
+    int r = rename(from_path.host_path(), to_path.host_path());
     if (r == 0) {
         i.msg().write_status(Qnx::QEOK);
     } else {
@@ -807,7 +822,7 @@ void MainHandler::io_rename(MsgInfo& i) {
     }
 }
 
-void MainHandler::io_stat(MsgInfo& i) {
+void MainHandler::io_stat(MsgContext& i) {
     QnxMsg::io::stat_request msg;
     i.msg().read_type(&msg);
     struct stat sb;
@@ -832,14 +847,14 @@ void MainHandler::io_stat(MsgInfo& i) {
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::io_fstat(MsgInfo& i) {
+void MainHandler::io_fstat(MsgContext& i) {
     QnxMsg::io::fstat_request msg;
     i.msg().read_type(&msg);
     struct stat sb;
 
     QnxMsg::io::fstat_reply reply;
     memset(&reply, 0, sizeof(reply));
-    int r = fstat(msg.m_fd, &sb);
+    int r = fstat(i.map_fd(msg.m_fd), &sb);
     if (r < 0) {
         reply.m_status = Emu::map_errno(errno);
         i.msg().write_type(0, &reply);
@@ -850,7 +865,7 @@ void MainHandler::io_fstat(MsgInfo& i) {
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::io_readdir(MsgInfo &i)
+void MainHandler::io_readdir(MsgContext &i)
 {
     QnxMsg::io::readdir_request msg;
     i.msg().read_type(&msg);
@@ -898,7 +913,7 @@ void MainHandler::io_readdir(MsgInfo &i)
     reply.m_status = Qnx::QEOK;
     i.msg().write_type(0, &reply);
 }
-void MainHandler::io_rewinddir(MsgInfo &i) {
+void MainHandler::io_rewinddir(MsgContext &i) {
     QnxMsg::io::readdir_request msg;
     i.msg().read_type(&msg);
     auto fd = i.proc().fds().get_open_fd(msg.m_fd);
@@ -963,7 +978,7 @@ void MainHandler::transfer_stat(QnxMsg::io::stat& dst, struct stat& src) {
     dst.m_status = 0;
 }
 
-void MainHandler::io_close(MsgInfo& i) {
+void MainHandler::io_close(MsgContext& i) {
     QnxMsg::io::close_request msg;
     i.msg().read_type(&msg);
 
@@ -976,7 +991,7 @@ void MainHandler::io_close(MsgInfo& i) {
     i.msg().write_status(Qnx::QEOK);
 }
 
-void MainHandler::io_lseek(MsgInfo &i) {
+void MainHandler::io_lseek(MsgContext &i) {
     QnxMsg::io::lseek_request msg;
     i.msg().read_type(&msg);
 
@@ -984,7 +999,7 @@ void MainHandler::io_lseek(MsgInfo &i) {
     memset(&reply, 0, sizeof(reply));
 
     // TODO: handle overflow
-    off_t off = lseek(msg.m_fd, msg.m_offset, msg.m_whence);
+    off_t off = lseek(i.map_fd(msg.m_fd), msg.m_offset, msg.m_whence);
     if (off == -1) {
         reply.m_status = Emu::map_errno(errno);
         reply.m_zero = 0;
@@ -997,7 +1012,7 @@ void MainHandler::io_lseek(MsgInfo &i) {
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::io_read(MsgInfo &i) {
+void MainHandler::io_read(MsgContext &i) {
     QnxMsg::io::read_request msg;
     i.msg().read_type(&msg);
 
@@ -1005,7 +1020,7 @@ void MainHandler::io_read(MsgInfo &i) {
     i.msg().write_iovec(sizeof(msg), msg.m_nbytes, iov);
 
     QnxMsg::io::read_reply reply;
-    int r = readv(msg.m_fd, iov.data(), iov.size());
+    int r = readv(i.map_fd(msg.m_fd), iov.data(), iov.size());
     reply.m_zero = 0;
     if (r < 0) {
         reply.m_status = errno;
@@ -1017,7 +1032,7 @@ void MainHandler::io_read(MsgInfo &i) {
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::io_write(MsgInfo &i) {
+void MainHandler::io_write(MsgContext &i) {
     QnxMsg::io::write_request msg;
     i.msg().read_type(&msg);
 
@@ -1025,7 +1040,7 @@ void MainHandler::io_write(MsgInfo &i) {
     i.msg().read_iovec(sizeof(msg), msg.m_nbytes, iov);
 
     QnxMsg::io::write_reply reply;
-    int r = writev(msg.m_fd, iov.data(), iov.size());
+    int r = writev(i.map_fd(msg.m_fd), iov.data(), iov.size());
     reply.m_zero = 0;
     if (r < 0) {
         reply.m_status = errno;
@@ -1037,14 +1052,14 @@ void MainHandler::io_write(MsgInfo &i) {
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::io_fcntl_flags(MsgInfo &i) {
+void MainHandler::io_fcntl_flags(MsgContext &i) {
     QnxMsg::io::fcntl_flags_request msg;
     i.msg().read_type(&msg);
 
     QnxMsg::io::fcntl_flags_reply reply;
     memset(&msg, 0, sizeof(reply));
 
-    int r = fcntl(msg.m_fd, F_GETFL);
+    int r = fcntl(i.map_fd(msg.m_fd), F_GETFL);
     if (r < 0) {
         reply.m_status = Emu::map_errno(errno);
         i.msg().write_type(0, &reply);
@@ -1106,19 +1121,27 @@ void MainHandler::io_fcntl_flags(MsgInfo &i) {
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::io_dup(MsgInfo &i) {
+void MainHandler::io_dup(MsgContext &i) {
     QnxMsg::io::dup_request msg;
     i.msg().read_type(&msg);
 
-    int r = dup2(msg.m_src_fd, msg.m_dst_fd);
+    auto src_fd = i.proc().fds().get_open_fd(msg.m_src_fd);
+    auto dst_fd = i.proc().fds().get_attached_fd(msg.m_dst_fd);
+
+    if (dst_fd->m_open) 
+        dst_fd->close();
+
+    int r = dup2(src_fd->m_host_fd, dst_fd->m_fd);
     if (r < 0) {
+        /* Yes, we are at inconsitent state, but it should not really happen if replacing a FD */
         i.msg().write_status(Emu::map_errno(errno));
     } else {
+        dst_fd->m_host_fd = msg.m_dst_fd;
         i.msg().write_status(Qnx::QEOK);
     }
 }
 
-void MainHandler::io_fpathconf(MsgInfo &i) {
+void MainHandler::io_fpathconf(MsgContext &i) {
     QnxMsg::io::fpathconf_request msg;
     i.msg().read_type(&msg);
 
@@ -1172,7 +1195,7 @@ void MainHandler::io_fpathconf(MsgInfo &i) {
     }
 
     errno = 0;
-    int r = fpathconf(msg.m_fd, msg.m_idx);
+    int r = fpathconf(i.map_fd(msg.m_fd), msg.m_idx);
     if (r < 0 && errno != 0) {
         i.msg().write_status(Emu::map_errno(errno));
     } else {
@@ -1182,29 +1205,29 @@ void MainHandler::io_fpathconf(MsgInfo &i) {
     }
 }
 
-void MainHandler::io_chmod(MsgInfo &i) {
+void MainHandler::io_chmod(MsgContext &i) {
     QnxMsg::io::chmod_request msg;
     i.msg().read_type(&msg);
 
-    int r = fchmod(msg.m_fd, msg.m_mode);
+    int r = fchmod(i.map_fd(msg.m_fd), msg.m_mode);
     i.msg().write_status((r == 0) ? Qnx::QEOK : Emu::map_errno(errno));
 }
 
-void MainHandler::io_chown(MsgInfo &i) {
+void MainHandler::io_chown(MsgContext &i) {
     QnxMsg::io::chown_request msg;
     i.msg().read_type(&msg);
 
-    int r = fchown(msg.m_fd, msg.m_uid, msg.m_gid);
+    int r = fchown(i.map_fd(msg.m_fd), msg.m_uid, msg.m_gid);
     i.msg().write_status((r == 0) ? Qnx::QEOK : Emu::map_errno(errno));
 }
 
-void MainHandler::io_utime(MsgInfo &i) {
+void MainHandler::io_utime(MsgContext &i) {
     QnxMsg::io::utime_request msg;
     i.msg().read_type(&msg);
     int r;
 
     if (msg.m_cur_flag) {
-        r = futimens(msg.m_fd, NULL);
+        r = futimens(i.map_fd(msg.m_fd), NULL);
     } else {
         struct timespec ts[2];
         ts[0].tv_nsec = 0;
@@ -1217,7 +1240,7 @@ void MainHandler::io_utime(MsgInfo &i) {
     i.msg().write_status((r == 0) ? Qnx::QEOK : Emu::map_errno(errno));
 }
 
-void MainHandler::fsys_unlink(MsgInfo &i) {
+void MainHandler::fsys_unlink(MsgContext &i) {
     QnxMsg::fsys::unlink_request msg;
     i.msg().read_type(&msg);
 
@@ -1235,13 +1258,14 @@ void MainHandler::fsys_unlink(MsgInfo &i) {
     }
 }
 
-void MainHandler::fsys_mkspecial(MsgInfo &i) {
+void MainHandler::fsys_mkspecial(MsgContext &i) {
     QnxMsg::fsys::mkspecial_request msg;
     i.msg().read_type(&msg);
     uint16_t mode = msg.m_open.m_mode;
     int r;
 
     auto p = i.proc().path_mapper().map_path_to_host(msg.m_path, true);
+
 
     if (S_ISDIR(mode)) {
         r = mkdir(p.host_path(), mode & ALLPERMS);
@@ -1251,7 +1275,8 @@ void MainHandler::fsys_mkspecial(MsgInfo &i) {
             i.msg().write_status(Emu::map_errno(errno));
         }
     } else if (mode & S_IFLNK) {
-        r = symlink(msg.m_target, p.host_path());
+        auto tp = i.proc().path_mapper().map_path_to_host(msg.m_target);
+        r = symlink(tp.host_path(), p.host_path());
         if (r == 0) {
             i.msg().write_status(Qnx::QEOK);
         } else {
@@ -1262,53 +1287,36 @@ void MainHandler::fsys_mkspecial(MsgInfo &i) {
     }
 }
 
-void MainHandler::fsys_readlink(MsgInfo &i) {
+void MainHandler::fsys_readlink(MsgContext &i) {
     QnxMsg::fsys::readlink_request msg;
     i.msg().read_type(&msg);
     QnxMsg::fsys::readlink_reply reply;
     clear(&reply);
 
-    auto p = i.proc().path_mapper().map_path_to_host(msg.m_path, true);
-    int r = readlink(p.host_path(), reply.m_path, Qnx::QPATH_MAX);
-    if (r >= 0) {
-        reply.m_status = Qnx::QEOK;
-        reply.m_path[r] = 0;
-        i.msg().write_type(0, &reply);
-    } else {
+    auto link_path = i.proc().path_mapper().map_path_to_host(msg.m_path, true);
+    std::string target_path_raw;
+    if (!Fsutil::readlink(link_path.host_path(), target_path_raw)) {
         i.msg().write_status(Emu::map_errno(errno));
+    } else {
+        if (!target_path_raw.empty() && target_path_raw[0] == '/') {
+            auto target_path = i.proc().path_mapper().map_path_to_qnx(target_path_raw.c_str());
+            strlcpy(reply.m_path, target_path.qnx_path(), sizeof(reply.m_path));
+        } else {
+            strlcpy(reply.m_path, target_path_raw.c_str(), sizeof(reply.m_path));
+        }
+        reply.m_status = Qnx::QEOK;
+        i.msg().write_type(0, &reply);
     }
 }
 
-std::string MainHandler::get_fd_path(int fd)
-{
-    char fdlink[64];
-    snprintf(fdlink, sizeof(fdlink), "/proc/self/fd/%d",fd);
-
-    std::string buf;
-    buf.resize(PATH_MAX);
-
-    int r = readlink(fdlink, buf.data(), buf.size());
-    if (r < 0) {
-        throw InconsistentFd();
-    }
-    buf.resize(r);
-    return buf;
-}
-
-void MainHandler::fsys_link(MsgInfo &i) {
+void MainHandler::fsys_link(MsgContext &i) {
     /* Note: we cannot use linkat without CAP_DAC_READ_SEARCH, which would be ideal*/
     QnxMsg::fsys::link_request msg;
     i.msg().read_type(&msg);
 
-    std::string fd_path;
-    try {
-        fd_path = get_fd_path(msg.m_arg.m_fd);
-    } catch (const InconsistentFd&) {
-        i.msg().write_status(Qnx::QEBADF);
-        return;
-    }
-
-    int r = link(fd_path.c_str(), msg.m_new_path);
+    auto fd = i.proc().fds().get_open_fd(msg.m_arg.m_fd);
+    i.proc().path_mapper().map_path_to_host(fd->m_path);
+    int r = link(fd->m_path.host_path(), msg.m_new_path);
     if (r == 0) {
         i.msg().write_status(Qnx::QEOK);
     } else {
@@ -1316,29 +1324,30 @@ void MainHandler::fsys_link(MsgInfo &i) {
     }
 }
 
-void MainHandler::fsys_sync(MsgInfo &i) {
+void MainHandler::fsys_sync(MsgContext &i) {
     sync();
     i.msg().write_status(Qnx::QEOK);
 }
 
-void MainHandler::fsys_trunc(MsgInfo &i) {
+void MainHandler::fsys_trunc(MsgContext &i) {
     QnxMsg::fsys::trunc_request msg;
     i.msg().read_type(&msg);
+    int host_fd = i.map_fd(msg.m_fd);
     // we need to get the truncate offset, so save current pos, seek to destination, and seek back
     // how to do that atomically, I do not know
-    off_t prev = lseek(msg.m_fd, 0, SEEK_CUR);
+    off_t prev = lseek(host_fd, 0, SEEK_CUR);
     if (prev == -1) {
         i.msg().write_status(Emu::map_errno(errno));
         return;
     }
-    off_t to = lseek(msg.m_fd, msg.m_offset, msg.m_whence);
+    off_t to = lseek(host_fd, msg.m_offset, msg.m_whence);
     if (to == -1) {
         i.msg().write_status(Emu::map_errno(errno));
         return;
     }
-    lseek(msg.m_fd, prev, SEEK_SET);
+    lseek(host_fd, prev, SEEK_SET);
 
-    int r = ftruncate(msg.m_fd, to);
+    int r = ftruncate(host_fd, to);
     if (r < 0) {
         i.msg().write_status(Emu::map_errno(errno));
         return;
@@ -1351,14 +1360,14 @@ void MainHandler::fsys_trunc(MsgInfo &i) {
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::fsys_fsync(MsgInfo &i) {
+void MainHandler::fsys_fsync(MsgContext &i) {
     QnxMsg::fsys::fsync_request msg;
     i.msg().read_type(&msg);
     int r;
     if (msg.m_flags & 0xFF) {
-        r = fdatasync(msg.m_fd);
+        r = fdatasync(i.map_fd(msg.m_fd));
     } else {
-        r = fsync(msg.m_fd);
+        r = fsync(i.map_fd(msg.m_fd));
     }
 
     if (r == 0) {
@@ -1368,7 +1377,7 @@ void MainHandler::fsys_fsync(MsgInfo &i) {
     }
 }
 
-void MainHandler::dev_tcgetattr(MsgInfo &i) {
+void MainHandler::dev_tcgetattr(MsgContext &i) {
     QnxMsg::dev::tcgetattr_request msg;
     i.msg().read_type(&msg);
 
@@ -1376,7 +1385,7 @@ void MainHandler::dev_tcgetattr(MsgInfo &i) {
     memset(&reply, 0, sizeof(reply));
 
     struct termios attr;
-    int r = tcgetattr(i.m_fd, &attr);
+    int r = tcgetattr(i.map_fd(i.m_fd), &attr);
     if (r < 0) {
         reply.m_status = Emu::map_errno(errno);
         i.msg().write_type(0, &reply);
@@ -1399,7 +1408,7 @@ void MainHandler::dev_tcgetattr(MsgInfo &i) {
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::dev_tcsetattr(MsgInfo &i) {
+void MainHandler::dev_tcsetattr(MsgContext &i) {
     QnxMsg::dev::tcsetattr_request msg;
     i.msg().read_type(&msg);
 
@@ -1418,8 +1427,7 @@ void MainHandler::dev_tcsetattr(MsgInfo &i) {
     attr.c_lflag = msg.m_state.m_lflag;
     attr.c_oflag = msg.m_state.m_oflag;
 
-    //int r = tcsetattr(i.m_fd, msg.m_optional_actions, &attr);
-    int r = 0;
+    int r = tcsetattr(i.map_fd(i.m_fd), msg.m_optional_actions, &attr);
     if (r < 0) {
         i.msg().write_status(Emu::map_errno(Qnx::QEOK));
     } else {
@@ -1427,13 +1435,13 @@ void MainHandler::dev_tcsetattr(MsgInfo &i) {
     }   
 }
 
-void MainHandler::dev_term_size(MsgInfo &i) {
+void MainHandler::dev_term_size(MsgContext &i) {
     QnxMsg::dev::term_size_request msg;
     i.msg().read_type(&msg);
     constexpr uint16_t no_change = std::numeric_limits<uint16_t>::max();
 
     winsize term_winsize;
-    int r = ioctl(msg.m_fd, TIOCGWINSZ, &term_winsize);
+    int r = ioctl(i.map_fd(msg.m_fd), TIOCGWINSZ, &term_winsize);
     if (r < 0) {
         i.msg().write_status(Emu::map_errno(errno));
     }

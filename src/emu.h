@@ -7,7 +7,7 @@
 #include <sys/ucontext.h>
 #include <bitset>
 
-#include "context.h"
+#include "guest_context.h"
 #include "qnx/errno.h"
 #include "qnx/procenv.h"
 
@@ -34,15 +34,15 @@ public:
     
     ~Emu();
 private:
-    void dispatch_syscall(Context& ctx);
-    void syscall_sendmx(Context& ctx);
-    void syscall_sendfdmx(Context& ctx);
-    void syscall_kill(Context& ctx);
-    void syscall_sigreturn(Context& ctx);
+    void dispatch_syscall(GuestContext& ctx);
+    void syscall_sendmx(GuestContext& ctx);
+    void syscall_sendfdmx(GuestContext& ctx);
+    void syscall_kill(GuestContext& ctx);
+    void syscall_sigreturn(GuestContext& ctx);
 
     void handler_segv(int sig, siginfo_t *info, void *uctx);
     void handler_generic(int sig, siginfo_t *info, void *uctx);
-    void signal_tail(Context& ctx);
+    void signal_tail(GuestContext& ctx);
 
     static void static_handler_segv(int sig, siginfo_t *info, void *uctx);
     static void static_handler_user(int sig, siginfo_t *info, void *uctx);

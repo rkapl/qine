@@ -11,7 +11,7 @@
 #include <map>
 #include <ucontext.h>
 
-#include "context.h"
+#include "guest_context.h"
 #include "cpp.h"
 #include "emu.h"
 #include "main_handler.h"
@@ -27,7 +27,7 @@
 #include "segment_descriptor.h"
 
 class Segment;
-class MsgInfo;
+class MsgContext;
 
 class CwdTooLong: public std::runtime_error {
 public:
@@ -43,7 +43,7 @@ struct LoadInfo {
 /* Represents the currently running process, a singleton */
 class Process{
     friend class Emu;
-    friend class Context;
+    friend class GuestContext;
     friend class MainHandler;
 public:
     static inline Process* current();
@@ -60,7 +60,7 @@ public:
     void setup_startup_context(int argc, char **argv);
     void enter_emu();
 
-    void handle_msg(MsgInfo& m);
+    void handle_msg(MsgContext& m);
 
     Qnx::pid_t pid() const;
     Qnx::pid_t parent_pid() const;
@@ -78,7 +78,7 @@ public:
     /* Only the mcontext will actually be used.*/
     ucontext_t m_startup_context_main;
     ExtraContext m_startup_context_extra;
-    Context m_startup_context;
+    GuestContext m_startup_context;
 
     LoadInfo m_load;
 private:

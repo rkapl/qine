@@ -7,7 +7,7 @@
 #include <limits>
 #include <vector>
 
-#include "context.h"
+#include "guest_context.h"
 #include "emu.h"
 #include "msg/meta.h"
 #include "types.h"

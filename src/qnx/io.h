@@ -1,6 +1,9 @@
 #pragma once
 
+#include <stdint.h>
+
 namespace Qnx {
+
     static constexpr int IO_HNDL_INFO = 1;        /*  STAT, PATHCONF (not much else)  */
     static constexpr int IO_HNDL_RDDIR = 2;       /*  OPENDIR                         */
     static constexpr int IO_HNDL_CHANGE = 3;      /*  CHMOD/CHOWN (to  owner)         */

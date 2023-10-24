@@ -20,67 +20,67 @@ public:
 /* Handles proc messages and passtrough FD messages */
 class MainHandler: public MsgHandler {
 public:
-    void receive(MsgInfo& msg);
+    void receive(MsgContext& msg);
 private:
     std::string get_fd_path(int fd);
     uint32_t map_file_flags_to_host(uint32_t flags);
 
-    void receive_inner(MsgInfo &i);
+    void receive_inner(MsgContext &i);
 
-    void proc_segment_realloc(MsgInfo &i);
-    void proc_segment_alloc(MsgInfo &i);
-    void proc_time(MsgInfo &i);
-    void proc_open(MsgInfo &i);
-    void proc_terminate(MsgInfo &i);
-    void proc_fd_attach(MsgInfo &i);
-    void proc_fd_detach(MsgInfo &i);
-    void proc_fd_query(MsgInfo &i);
-    void proc_fd_action1(MsgInfo &i);
-    void proc_vc_detach(MsgInfo &i);
-    void proc_vc_attach(MsgInfo &i);
-    void proc_psinfo(MsgInfo &i);
-    void proc_sigtab(MsgInfo &i);
-    void proc_sigact(MsgInfo &i);
-    void proc_getid(MsgInfo &i);
-    void proc_sigmask(MsgInfo &i);
-    void proc_osinfo(MsgInfo &i);
-    void proc_prefix(MsgInfo &i);
+    void proc_segment_realloc(MsgContext &i);
+    void proc_segment_alloc(MsgContext &i);
+    void proc_time(MsgContext &i);
+    void proc_open(MsgContext &i);
+    void proc_terminate(MsgContext &i);
+    void proc_fd_attach(MsgContext &i);
+    void proc_fd_detach(MsgContext &i);
+    void proc_fd_query(MsgContext &i);
+    void proc_fd_action1(MsgContext &i);
+    void proc_vc_detach(MsgContext &i);
+    void proc_vc_attach(MsgContext &i);
+    void proc_psinfo(MsgContext &i);
+    void proc_sigtab(MsgContext &i);
+    void proc_sigact(MsgContext &i);
+    void proc_getid(MsgContext &i);
+    void proc_sigmask(MsgContext &i);
+    void proc_osinfo(MsgContext &i);
+    void proc_prefix(MsgContext &i);
 
-    void proc_fork(MsgInfo &i);
-    void proc_spawn(MsgInfo &i);
-    void proc_exec(MsgInfo &i);
-    void proc_exec_common(MsgInfo &i);
-    void proc_wait(MsgInfo &i);
+    void proc_fork(MsgContext &i);
+    void proc_spawn(MsgContext &i);
+    void proc_exec(MsgContext &i);
+    void proc_exec_common(MsgContext &i);
+    void proc_wait(MsgContext &i);
 
-    void io_open(MsgInfo &i);
-    void io_chdir(MsgInfo &i);
-    void io_stat(MsgInfo &i);
-    void io_rename(MsgInfo &i);
-    void io_fstat(MsgInfo &i);
-    void io_close(MsgInfo &i);
-    void io_read(MsgInfo &i);
-    void io_write(MsgInfo &i);
-    void io_lseek(MsgInfo &i);
-    void io_readdir(MsgInfo &i);
-    void io_rewinddir(MsgInfo &i);
-    void io_fcntl_flags(MsgInfo &i);
-    void io_dup(MsgInfo &i);
-    void io_fpathconf(MsgInfo &i);
-    void io_chmod(MsgInfo &i);
-    void io_chown(MsgInfo &i);
-    void io_utime(MsgInfo &i);
+    void io_open(MsgContext &i);
+    void io_chdir(MsgContext &i);
+    void io_stat(MsgContext &i);
+    void io_rename(MsgContext &i);
+    void io_fstat(MsgContext &i);
+    void io_close(MsgContext &i);
+    void io_read(MsgContext &i);
+    void io_write(MsgContext &i);
+    void io_lseek(MsgContext &i);
+    void io_readdir(MsgContext &i);
+    void io_rewinddir(MsgContext &i);
+    void io_fcntl_flags(MsgContext &i);
+    void io_dup(MsgContext &i);
+    void io_fpathconf(MsgContext &i);
+    void io_chmod(MsgContext &i);
+    void io_chown(MsgContext &i);
+    void io_utime(MsgContext &i);
 
-    void fsys_unlink(MsgInfo &i);
-    void fsys_mkspecial(MsgInfo &i);
-    void fsys_link(MsgInfo &i);
-    void fsys_sync(MsgInfo &i);
-    void fsys_readlink(MsgInfo &i);
-    void fsys_trunc(MsgInfo &i);
-    void fsys_fsync(MsgInfo &i);
+    void fsys_unlink(MsgContext &i);
+    void fsys_mkspecial(MsgContext &i);
+    void fsys_link(MsgContext &i);
+    void fsys_sync(MsgContext &i);
+    void fsys_readlink(MsgContext &i);
+    void fsys_trunc(MsgContext &i);
+    void fsys_fsync(MsgContext &i);
 
     void transfer_stat(QnxMsg::io::stat& dst, struct stat& src);
 
-    void dev_tcgetattr(MsgInfo &i);
-    void dev_tcsetattr(MsgInfo &i);
-    void dev_term_size(MsgInfo &i);
+    void dev_tcgetattr(MsgContext &i);
+    void dev_tcsetattr(MsgContext &i);
+    void dev_term_size(MsgContext &i);
 };
