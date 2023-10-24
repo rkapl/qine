@@ -96,7 +96,6 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
     }
 
     signal_tail(ctx);
-    ectx.to_cpu();
 }
 
 qine_no_tls void Emu::static_handler_generic(int sig, siginfo_t *info, void *uctx) {
@@ -121,22 +120,22 @@ qine_no_tls void Emu::handler_generic(int sig, siginfo_t *info, void *uctx_void)
     m_sigpend |= (1u << qnx_sig);
 
     signal_tail(ctx);
-
-    ectx.to_cpu();
 }
 
 /* 
  * This functions is called on exit from a host signal and is responsible 
  * for setting up QNX signal state if there is a pending signal.
  */
-void Emu::signal_tail(GuestContext& ctx) {
+qine_no_tls void Emu::signal_tail(GuestContext& ctx) {
     auto activesig = (~m_sigmask) & m_sigpend;
 
-    if (activesig == 0)
-        return;
-
     if ((ctx.reg_cs() & SegmentDescriptor::SEL_LDT) == 0) {
-        /* We are returning to host code -- do not setup QNX signal yet */
+        /* We are returning to host code -- do not do anyting special */
+        return;
+    }
+
+    if (activesig == 0) {
+        ctx.m_ectx->to_cpu();
         return;
     }
 
@@ -183,6 +182,7 @@ void Emu::signal_tail(GuestContext& ctx) {
     ctx.reg_cs() = proc->m_load.entry_main->m_segment;
     ctx.reg_eip() = proc->m_sigtab->sigstub;
     Log::print(Log::SIG, "raised signal %d\n", qnx_sig);
+    ctx.m_ectx->to_cpu();
 }
 
 void Emu::syscall_sigreturn(GuestContext &ctx)
