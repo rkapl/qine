@@ -28,6 +28,7 @@ add_executable(qine
   src/path_mapper.h src/path_mapper.cpp
   src/process.h src/process.cpp
   src/qnx_fd.h src/qnx_fd.cpp
+  src/qnx_pid.h src/qnx_pid.cpp
   src/segment.h src/segment.cpp
   src/segment_descriptor.h src/segment_descriptor.cpp
   src/msg.h src/msg.cpp

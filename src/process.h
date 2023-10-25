@@ -24,6 +24,7 @@
 #include "intrusive_list.h"
 #include "idmap.h"
 #include "qnx_fd.h"
+#include "qnx_pid.h"
 #include "segment_descriptor.h"
 
 class Segment;
@@ -55,6 +56,7 @@ public:
     SegmentDescriptor* create_segment_descriptor_at(Access access, const std::shared_ptr<Segment>& mem, SegmentId id);
     void* translate_segmented(FarPointer ptr, uint32_t size = 0, RwOp op = RwOp::READ);
     FdMap& fds() {return m_fds;}
+    PidMap& pids() {return m_pids;}
     PathMapper& path_mapper() {return m_path_mapper;}
 
     void setup_startup_context(int argc, char **argv);
@@ -69,8 +71,6 @@ public:
 
     const std::vector<std::string>& self_call() const;
 
-    // temporary
-    static Qnx::pid_t child_pid();
     const std::string& file_name() const;
 
     void set_errno(int v);
@@ -103,6 +103,8 @@ private:
     FdMap m_fds;
     MainHandler m_main_handler;
     PathMapper m_path_mapper;
+    PidMap m_pids;
+    QnxFd* m_my_pid;
 
     // Qnx special memory areas
     std::shared_ptr<Segment> m_magic_pointer;

@@ -60,16 +60,27 @@ void Process::initialize(std::vector<std::string>&& self_call) {
     memset(&m_startup_context_extra, 0xcc, sizeof(m_startup_context_extra));
     m_emu.init();
     m_fds.scan_host_fds(m_current->nid(), 1, 1);
+
+    // reserve the "proc" (QNX central process) pid
+    m_pids.alloc_permanent_pid(QnxPid::PID_PROC, -1);
+    m_pids.alloc_permanent_pid(QnxPid::PID_PARENT, -1);
+    m_pids.alloc_permanent_pid(QnxPid::PID_UNKNOWN, -1);
+    m_pids.alloc_permanent_pid(QnxPid::PID_SELF, getpid());
 }
 
 Qnx::pid_t Process::pid() const
 {
-    return 0x1001;
+    return QnxPid::PID_SELF;
 }
 
 Qnx::pid_t Process::parent_pid() const
 {
-    return 0x1002;
+    if (getppid() == 1) {
+        // simulate being inherited by init
+        return QnxPid::PID_SELF;
+    } else {
+        return QnxPid::PID_PARENT;
+    }
 }
 
 Qnx::pid_t Process::nid() const
@@ -80,10 +91,6 @@ Qnx::pid_t Process::nid() const
 Qnx::sid_t Process::sid() const
 {
     return 0x1;
-}
-
-Qnx::pid_t Process::child_pid() {
-    return 0x1003;
 }
 
 const std::string& Process::file_name() const {

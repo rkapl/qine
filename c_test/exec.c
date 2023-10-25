@@ -12,10 +12,15 @@ int main (int argc, char **argv) {
 
             execl("./exec", "./exec", "1", NULL);
         } else {
+            int pid2;
             printf("ok! fork %d\n", r);
 
-            wait(NULL);
-            printf("wait done\n");
+            pid2 = wait(NULL);
+            if (pid2 == r) {
+                printf("ok! wait\n");
+            } else {
+                printf("no! wait child = %d\n", pid2);
+            }
         }
     } else {
         printf("ok! exec_child\n");

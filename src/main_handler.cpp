@@ -37,6 +37,7 @@
 #include "qnx/psinfo.h"
 #include "qnx/stat.h"
 #include "qnx/types.h"
+#include "qnx/wait.h"
 #include "segment_descriptor.h"
 #include "types.h"
 #include "log.h"
@@ -546,9 +547,12 @@ void MainHandler::proc_fork(MsgContext &i) {
         reply.m_status = Emu::map_errno(errno);
     } else {
         if (r == 0) {
+            // in child
             reply.m_son_pid = 0;
         } else {
-            reply.m_son_pid = Process::child_pid();
+            // in parent
+            auto pid =  i.proc().pids().alloc_pid(r);
+            reply.m_son_pid = pid->qnx_pid();
         }
         reply.m_status = Qnx::QEOK;
     }
@@ -567,7 +571,8 @@ void MainHandler::proc_spawn(MsgContext &i) {
         perror("exec");
         exit(255);
     } else {
-        reply.m_son_pid = Process::child_pid();
+        auto pid = i.proc().pids().alloc_pid(r);
+        reply.m_son_pid = pid->qnx_pid();
         reply.m_status = Qnx::QEOK;
     }
     i.msg().write_type(0, &reply);
@@ -687,16 +692,57 @@ void MainHandler::proc_wait(MsgContext &i) {
 
     QnxMsg::proc::wait_reply reply;
     clear(&reply);
-    // TODO: once we get PID remap, call the real deal
-    int status;
-    pid_t pid = wait(&status);
+    
+    // transform the wait code to host code if needed
+    int wait_code;
+    if (msg.m_pid == -1 || msg.m_pid == 0) {
+        wait_code = msg.m_pid;
+    } else if (msg.m_pid > 0) {
+        auto pid = i.proc().pids().qnx(msg.m_pid);
+        if (!pid) {
+            i.msg().write_status(Qnx::QECHILD);
+            return;
+        } else {
+            wait_code = msg.m_pid;
+        }
 
-    if (pid < 0) {
+    } else if (msg.m_pid < -1) {
+        auto pid = i.proc().pids().qnx(msg.m_pid);
+        if (!pid) {
+            i.msg().write_status(Qnx::QECHILD);
+            return;
+        } else {
+            wait_code = -msg.m_pid;
+        }
+    }
+
+    int wait_options = 0;
+    if (msg.m_options & Qnx::QWNOHANG)
+        wait_options |= WNOHANG;
+
+    int host_status;
+    pid_t child_host_pid = waitpid(wait_code, &host_status, wait_options);
+
+    if (child_host_pid < 0) {
         reply.m_status = Emu::map_errno(errno);
     } else {
+        auto child_pid = i.proc().pids().host(child_host_pid);
+        if (child_pid) {
+            reply.m_pid = child_pid->qnx_pid();
+            i.proc().pids().free_pid(child_pid);
+        } else {
+            reply.m_pid = QnxPid::PID_UNKNOWN;
+        }
         reply.m_status = Qnx::QEOK;
-        reply.m_xstatus = status;
-        reply.m_pid = Process::child_pid();
+        // QNX status has the form (0xEESS) (EE is error status, SS is signal code)
+        // Stop signalling is not supported
+        if (WIFSIGNALED(host_status)) {
+            reply.m_xstatus = Emu::map_sig_host_to_qnx(WTERMSIG(host_status));
+        } else if (WIFSTOPPED(host_status)) {
+            reply.m_xstatus = Emu::map_sig_host_to_qnx(WSTOPSIG(host_status));
+        } else {
+            reply.m_xstatus = WEXITSTATUS(host_status) << 8;
+        }
     }
     i.msg().write_type(0, &reply);
 }

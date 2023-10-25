@@ -31,6 +31,9 @@ public:
     static void debug_hook_sig_enter();
 
     static Qnx::errno_t map_errno(int v);
+    static int map_sig_host_to_qnx(int sig);
+    static int map_sig_qnx_to_host(int sig);
+    static sigset_t map_sigmask_qnx_to_host(uint32_t mask);
     
     ~Emu();
 private:
@@ -47,10 +50,6 @@ private:
     static void static_handler_segv(int sig, siginfo_t *info, void *uctx);
     static void static_handler_user(int sig, siginfo_t *info, void *uctx);
     static void static_handler_generic(int sig, siginfo_t *info, void *uctx);
-
-    static int map_sig_host_to_qnx(int sig);
-    static int map_sig_qnx_to_host(int sig);
-    static sigset_t map_sigmask_qnx_to_host(uint32_t mask);
 
     TlsFixup m_tls_fixup;
 
