@@ -10,7 +10,7 @@ int main (int argc, char **argv) {
         } else if (r == 0) {
             printf("ok! child %d\n", r);
 
-            execl("./exec", "1", NULL);
+            execl("./exec", "./exec", "1", NULL);
         } else {
             printf("ok! fork %d\n", r);
 

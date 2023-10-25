@@ -12,6 +12,13 @@ int main(void) {
     struct stat sb;
     int r;
 
+    printf("ex! symlink\n");
+    printf("ex! lstat\n");
+    printf("ex! symlink_result\n");
+    printf("ex! stat_result\n");
+    printf("ex! readlink\n");
+    printf("ex! readlink_target\n");
+
     unlink(test_link);
     touch(test_file);
 

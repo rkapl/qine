@@ -1320,8 +1320,12 @@ void MainHandler::fsys_mkspecial(MsgContext &i) {
             i.msg().write_status(Emu::map_errno(errno));
         }
     } else if (mode & S_IFLNK) {
-        auto tp = i.proc().path_mapper().map_path_to_host(msg.m_target);
-        r = symlink(tp.host_path(), p.host_path());
+        if (Fsutil::is_abs(msg.m_target)) {
+            auto tp = i.proc().path_mapper().map_path_to_host(msg.m_target);
+            r = symlink(tp.host_path(), p.host_path());
+        } else {
+            r = symlink(msg.m_target, p.host_path());
+        }
         if (r == 0) {
             i.msg().write_status(Qnx::QEOK);
         } else {

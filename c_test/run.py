@@ -5,9 +5,10 @@ from pathlib import Path, PurePath
 import subprocess
 import shlex
 import argparse
+import sys
 
 parse = argparse.ArgumentParser()
-parse.add_argument('test')
+parse.add_argument('test', default=None, nargs='?')
 parse.add_argument('-d', action='append')
 
 args = parse.parse_args()
@@ -22,9 +23,19 @@ build = c_test / 'build'
 
 build.mkdir(exist_ok=True)
 
-def exec(args):
+class TestResult:
+    def __init__(self, name: str, failures) -> None:
+        self.name = name
+        self.failures = failures
+
+def print_args(args):
     print('+ ' + ' '.join([shlex.quote(str(v)) for v in args]))
+
+def exec(args):
+    print_args(args)
     subprocess.check_call(args)
+
+test_results = []
 
 def run_test(test):
     os.chdir(c_test)
@@ -33,6 +44,8 @@ def run_test(test):
     test_dir.mkdir(exist_ok=True)
     os.chdir(test_dir)
     qine_cmd = [qine , '--']
+
+    print(f'----- TEST {test} ------')
 
     includes = [
         '-I' + str(watcom / 'include'),
@@ -53,6 +66,37 @@ def run_test(test):
     for a in args.d or []:
         extra_args.extend(['-d', a])
 
-    exec([qine] + extra_args + ['--', f'./{test}'])
+    failures = []
+    run_args = [qine] + extra_args + ['--', f'./{test}']
+    print_args(run_args)
+    proc = subprocess.Popen(run_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding='ascii')
+    with open('run.log', 'wt') as f:
+        for l in proc.stdout:
+            f.write(l)
+            sys.stdout.write(l)
+            if l.startswith('no!'):
+                failures.append(l.strip())
+    r = proc.wait()
+    if r != 0:
+        failures.append('no! retcode\n')
 
-run_test(args.test)
+    test_results.append(TestResult(test, failures))
+
+if args.test is None:
+    for t in Path('.').glob('*.c'):
+        stem = t.stem
+        if stem == 'common':
+            continue
+        run_test(stem)
+
+    failing_results = [t for t in test_results if t.failures]
+    print("----------")
+    if len(failing_results) == 0:
+        print("All tests passed")
+    else:
+        for t in failing_results:
+            print(t.name)
+            for r in t.failures:
+                print(f'  {r}')
+else:
+    run_test(args.test)

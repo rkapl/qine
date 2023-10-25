@@ -9,6 +9,11 @@ int main(void) {
     struct stat sb;
     const char *test_dir = "test.dir";
 
+    printf("ex! mkdir\n");
+    printf("ex! stat\n");
+    printf("ex! mkdir_result\n");
+    printf("ex! rmdir\n");
+
     unlink(test_dir);
 
     r = mkdir(test_dir, 0777);
