@@ -35,6 +35,7 @@
 #include "qnx/osinfo.h"
 #include "qnx/procenv.h"
 #include "qnx/psinfo.h"
+#include "qnx/signal.h"
 #include "qnx/stat.h"
 #include "qnx/timers.h"
 #include "qnx/types.h"
@@ -162,6 +163,9 @@ void MainHandler::receive_inner(MsgContext& i) {
             break;
             case QnxMsg::proc::msg_timer_settime::SUBTYPE:
                 proc_timer_settime(i);
+            break;
+            case QnxMsg::proc::msg_timer_alarm::SUBTYPE:
+                proc_timer_alarm(i);
             break;
             default:
                 unhandled_msg();
@@ -781,6 +785,26 @@ void MainHandler::proc_timer_settime(MsgContext &i) {
     if (r == 0 && msg.m_arg.m_flags & Qnx::QTIMER_AUTO_RELEASE) {
         timer_delete(host_timer);
     }
+}
+
+void MainHandler::proc_timer_alarm(MsgContext &i) {
+    QnxMsg::proc::timer_request msg;
+    i.msg().read_type(&msg);
+
+    if (msg.m_arg.m_notify_type != Qnx::QTNOTIFY_SIGNAL || msg.m_arg.m_data != Qnx::QSIGALRM) {
+        Log::print(Log::UNHANDLED, "alarm with other settings than QSIGALARM\n");
+        i.msg().write_status(Qnx::QENOTSUP);
+        return;
+    }
+
+    int r = alarm(msg.m_arg.m_sec1);
+
+    QnxMsg::proc::timer_reply reply;
+    clear(&reply);
+    reply.m_arg = msg.m_arg;
+    reply.m_status = Qnx::QEOK;
+    reply.m_arg.m_sec1 = r;
+    i.msg().write_type(0, &reply);
 }
 
 void MainHandler::proc_wait(MsgContext &i) {

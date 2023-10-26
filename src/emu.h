@@ -42,6 +42,7 @@ private:
     void syscall_sendfdmx(GuestContext& ctx);
     void syscall_kill(GuestContext& ctx);
     void syscall_sigreturn(GuestContext& ctx);
+    void syscall_receivmx(GuestContext& ctx);
 
     void handler_segv(int sig, siginfo_t *info, void *uctx);
     void handler_generic(int sig, siginfo_t *info, void *uctx);

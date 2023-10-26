@@ -85,6 +85,14 @@ msg timer_settime {
     reply timer_reply;
 }
 
+msg timer_alarm {
+    type: 11;
+    subtype: 10;
+
+    request timer_request;
+    reply timer_reply;
+}
+
 msg wait {
     type: 27;
 

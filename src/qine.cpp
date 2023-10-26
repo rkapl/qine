@@ -40,6 +40,8 @@ static struct option cmd_options[] = {
 };
 
 int main(int argc, char **argv) {
+    setvbuf(stdout, nullptr, _IOLBF, 256);
+    setvbuf(stderr, nullptr, _IOLBF, 256);
     auto proc = Process::create();
     try {
         for (;;) {

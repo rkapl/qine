@@ -201,6 +201,9 @@ void Emu::dispatch_syscall(GuestContext& ctx)
         case 0:
             syscall_sendmx(ctx);
             break;
+        case 1:
+            syscall_receivmx(ctx);
+            break;
         case 7:
             syscall_sigreturn(ctx);
             break;
@@ -236,6 +239,21 @@ void Emu::syscall_sendfdmx(GuestContext &ctx)
     info.m_fd = fd;
 
     proc->handle_msg(info);
+}
+
+void Emu::syscall_receivmx(GuestContext &ctx)
+{
+    // we do not support messages yet, but slib:pause uses it as e.g. "pause" (=wait for signal)
+    Qnx::pid_t pid = ctx.reg_edx();
+    uint8_t rcv_parts = ctx.reg_ah();
+    GuestPtr rmsg = ctx.reg_ebx();
+
+    if (pid == QnxPid::PID_PROC || pid == 0) {
+        pause();
+        ctx.reg_eax() = Qnx::QEINTR;
+    } else {
+        ctx.reg_eax() = Qnx::QESRCH;
+    }
 }
 
 void Emu::syscall_sendmx(GuestContext &ctx)
