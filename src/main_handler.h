@@ -52,6 +52,8 @@ private:
     void proc_spawn(MsgContext &i);
     void proc_exec(MsgContext &i);
     void proc_exec_common(MsgContext &i);
+    void proc_timer_create(MsgContext &i);
+    void proc_timer_settime(MsgContext &i);
     void proc_wait(MsgContext &i);
 
     void io_open(MsgContext &i);

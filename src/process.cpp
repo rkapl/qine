@@ -75,12 +75,7 @@ Qnx::pid_t Process::pid() const
 
 Qnx::pid_t Process::parent_pid() const
 {
-    if (getppid() == 1) {
-        // simulate being inherited by init
-        return QnxPid::PID_SELF;
-    } else {
-        return QnxPid::PID_PARENT;
-    }
+    return QnxPid::PID_PARENT;
 }
 
 Qnx::pid_t Process::nid() const

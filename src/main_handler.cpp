@@ -36,6 +36,7 @@
 #include "qnx/procenv.h"
 #include "qnx/psinfo.h"
 #include "qnx/stat.h"
+#include "qnx/timers.h"
 #include "qnx/types.h"
 #include "qnx/wait.h"
 #include "segment_descriptor.h"
@@ -154,6 +155,18 @@ void MainHandler::receive_inner(MsgContext& i) {
         case QnxMsg::proc::msg_exec::TYPE:
             proc_exec(i);
             break;
+        case QnxMsg::proc::msg_timer_create::TYPE:
+            switch (hdr.subtype) {
+            case QnxMsg::proc::msg_timer_create::SUBTYPE:
+                proc_timer_create(i);
+            break;
+            case QnxMsg::proc::msg_timer_settime::SUBTYPE:
+                proc_timer_settime(i);
+            break;
+            default:
+                unhandled_msg();
+            break;
+            }break;
         case QnxMsg::proc::msg_wait::TYPE:
             proc_wait(i);
             break;
@@ -684,6 +697,90 @@ void MainHandler::proc_exec_common(MsgContext &i) {
 
     //printf("About to exec: %s\n", final_argv[0]);
     execve(final_argv[0], const_cast<char**>(final_argv.data()), const_cast<char**>(envp.data()));
+}
+
+void MainHandler::proc_timer_create(MsgContext &i) {
+    QnxMsg::proc::timer_request msg;
+    i.msg().read_type(&msg);
+
+    struct sigevent sev;
+    sev.sigev_notify = SIGEV_NONE;
+    switch (msg.m_arg.m_notify_type) {
+        #if 0
+        case Qnx::QTNOTIFY_SIGNAL:
+            sev.sigev_notify = SIGEV_SIGNAL;
+            sev.sigev_signo = Emu::map_sig_qnx_to_host(msg.m_arg.m_data);
+            sev.sigev_value.sival_int = msg.m_arg.m_cookie;
+            break;
+        #endif
+        case Qnx::QTNOTIFY_SLEEP:
+            sev.sigev_notify = SIGEV_NONE;
+        break;
+        default:
+            Log::print(Log::UNHANDLED, "timer with notififcation != sleep\n");
+            i.msg().write_status(Qnx::QENOTSUP);
+            return;
+    }
+
+    timer_t out_timer;
+    int r = timer_create(CLOCK_REALTIME, &sev, &out_timer);
+    if (r < 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+    } else {
+        QnxMsg::proc::timer_reply reply;
+        clear(&reply);
+        
+        reply.m_status = Qnx::QEOK;
+        /* We hope that will be able to pass the timer directly to QNX*/
+        /* Until then, we will need to create a special map. We may need to do it anyway to support the special flags.*/
+        reply.m_arg.m_cookie = reinterpret_cast<uintptr_t>(out_timer);
+        i.msg().write_type(0, &reply);
+    }
+}
+
+void MainHandler::proc_timer_settime(MsgContext &i) {
+    QnxMsg::proc::timer_request msg;
+    i.msg().read_type(&msg);
+
+    struct itimerspec tv = {
+        .it_interval = {
+            .tv_sec = msg.m_arg.m_sec1,
+            .tv_nsec = msg.m_arg.m_nsec1,
+        },
+        .it_value = {
+            .tv_sec = msg.m_arg.m_sec2,
+            .tv_nsec = msg.m_arg.m_nsec2,
+        }
+    };
+
+    timer_t host_timer = reinterpret_cast<timer_t>(static_cast<uintptr_t>(msg.m_arg.m_cookie));
+    int host_flags = 0;
+    if (msg.m_arg.m_flags & Qnx::QTIMER_ABSTIME) {
+        host_flags |= TIMER_ABSTIME;
+    }
+
+    if (msg.m_arg.m_flags & (Qnx::QTIMER_PRESERVE_EXEC | Qnx::QTIMER_ADDREL)) {
+        Log::print(Log::UNHANDLED, "timer with unsupported flags\n");
+        i.msg().write_status(Qnx::QENOTSUP);
+        return;
+    }
+
+    // only notify sleep supported for now
+    struct timespec rem;
+    QnxMsg::proc::timer_reply reply;
+    clear(&reply);
+
+    int r = clock_nanosleep(CLOCK_REALTIME, host_flags, &tv.it_interval, &rem);
+    if (r != 0) {
+        reply.m_status = Emu::map_errno(errno);
+    }
+    reply.m_arg.m_nsec1 = rem.tv_sec;
+    reply.m_arg.m_sec1 = rem.tv_nsec;
+    i.msg().write_type(0, &reply);
+
+    if (r == 0 && msg.m_arg.m_flags & Qnx::QTIMER_AUTO_RELEASE) {
+        timer_delete(host_timer);
+    }
 }
 
 void MainHandler::proc_wait(MsgContext &i) {

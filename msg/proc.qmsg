@@ -43,6 +43,48 @@ msg fork {
     reply loaded_reply;
 }
 
+struct timer_args {
+    flags: u16 hex;
+    cookie: u16;
+    timer_type: u8 hex;
+    notify_type: u8 hex;
+    sec1: u32;
+    nsec1: u32;
+    sec2: u32;
+    nsec2: u32;
+    data: u32;
+    padd: u32;
+}
+
+struct timer_request {
+    type: u16;
+    subtype: u16;
+    arg: timer_args;
+}
+
+struct timer_reply {
+    status: u16;
+    pid: pid;
+    arg: timer_args;
+}
+ 
+
+msg timer_create {
+    type: 11;
+    subtype: 0;
+
+    request timer_request;
+    reply timer_reply;
+}
+
+msg timer_settime {
+    type: 11;
+    subtype: 9;
+
+    request timer_request;
+    reply timer_reply;
+}
+
 msg wait {
     type: 27;
 

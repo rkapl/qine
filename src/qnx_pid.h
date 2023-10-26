@@ -19,11 +19,12 @@ public:
     static constexpr Qnx::mpid_t PID_SELF = 10;
 
     enum Type {
-        PERMANENT, CHILD,
+        EMPTY, PERMANENT, CHILD
     };
 
     pid_t host_pid() const { return m_host_pid; }
     Qnx::mpid_t qnx_pid() const { return m_qnx_pid; }
+    Type type() const { return m_type; }
 private:
     Type m_type;
     Qnx::mpid_t m_qnx_pid;
@@ -46,6 +47,7 @@ public:
     QnxPid *host(int pid);
     void free_pid(QnxPid *pid);
 private:
+    QnxPid *alloc_empty();
     // cannot be copied, because m_reverse_map keeps pointers into m_qnx_map
     NoCopy m_no_copy_marker;
 
