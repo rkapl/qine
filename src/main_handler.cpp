@@ -83,6 +83,9 @@ void MainHandler::receive_inner(MsgContext& i) {
         case QnxMsg::proc::msg_time::TYPE:
             proc_time(i);
             break;
+        case QnxMsg::proc::msg_setpgid::TYPE:
+            proc_setpgid(i);
+            break;
         case QnxMsg::proc::msg_terminate::TYPE:
             proc_terminate(i);
             break;
@@ -270,6 +273,18 @@ void MainHandler::receive_inner(MsgContext& i) {
         case QnxMsg::dev::msg_tcsetattr::TYPE:
             dev_tcsetattr(i);
             break;
+        case QnxMsg::dev::msg_dev_info::TYPE:
+            dev_info(i);
+            break;
+        case QnxMsg::dev::msg_dev_fdinfo::TYPE:
+            dev_fdinfo(i);
+            break;
+        case QnxMsg::dev::msg_tcgetpgrp::TYPE:
+            dev_tcgetpgrp(i);
+            break;
+        case QnxMsg::dev::msg_tcsetpgrp::TYPE:
+            dev_tcsetpgrp(i);
+            break;
         case QnxMsg::dev::msg_term_size::TYPE:
             dev_term_size(i);
             break;
@@ -308,6 +323,41 @@ void MainHandler::proc_time(MsgContext& i)
         Log::print(Log::UNHANDLED, "set time not supported\n");
     }
     i.msg().write_type(0, &reply);
+}
+
+void MainHandler::proc_setpgid(MsgContext &i) {
+    QnxMsg::proc::setpgid_request msg;
+    i.msg().read_type(&msg);
+
+    // find the pids and pgids if needed
+    pid_t host_pid = 0;
+    if (msg.m_pid) {
+        auto pid_info = i.proc().pids().qnx(msg.m_pid);
+        if (pid_info) {
+            host_pid = pid_info->host_pid();
+        } else {
+            i.msg().write_status(Qnx::QESRCH);
+            return;
+        }
+    }
+
+    pid_t host_pgid = 0;
+    if (msg.m_pgid) {
+        auto pgid_info = i.proc().pids().qnx(msg.m_pgid);
+        if (pgid_info) {
+            host_pgid = pgid_info->host_pid();
+        } else {
+            i.msg().write_status(Qnx::QESRCH);
+            return;
+        }
+    }
+
+    int r = setpgid(host_pid, host_pgid);
+    if (r < 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+    } else {
+        i.msg().write_status(Qnx::QEOK);
+    }
 }
 
 void MainHandler::proc_fd_attach(MsgContext& i)
@@ -464,22 +514,36 @@ void MainHandler::proc_vc_detach(MsgContext& i)
 
 void MainHandler::proc_psinfo(MsgContext &i)
 {
-    auto proc = Process::current();
-    // known user: wlink tries to find its own exec (via _cmdname   )
-    i.msg().write_status(Qnx::QEOK);
-    Qnx::psinfo ps;
-    memset(&ps, 0, sizeof(ps));
-    ps.pid = proc->pid();
-    ps.rgid = getgid();
-    ps.ruid = getuid();
-    ps.egid = getegid();
-    ps.euid = geteuid();
-    ps.sid = proc->sid();
-    ps.proc.father = proc->parent_pid();
+    QnxMsg::proc::psinfo_request msg;
+    i.msg().read_type(&msg);
 
-    strlcpy(ps.proc.name, proc->file_name().c_str(), sizeof(ps.proc.name));
-    
-    i.msg().write_type(2, &ps);
+    if (msg.m_pid == i.proc().pid()) {
+        auto proc = &i.proc();
+        // known user: wlink tries to find its own exec (via _cmdname   )
+        // getsid pulls the sid from here
+        i.msg().write_status(Qnx::QEOK);
+        Qnx::psinfo ps;
+        clear(&ps);
+        ps.pid = proc->pid();
+        ps.rgid = getgid();
+        ps.ruid = getuid();
+        ps.egid = getegid();
+        ps.euid = geteuid();
+        int host_sid = getsid(0);
+        auto sid_info = proc->pids().host(host_sid);
+        if (sid_info) {
+            ps.sid = sid_info->qnx_pid();
+        } else {
+            ps.sid = QnxPid::PID_UNKNOWN;
+        }
+        ps.proc.father = proc->parent_pid();
+
+        strlcpy(ps.proc.name, proc->file_name().c_str(), sizeof(ps.proc.name));
+        i.msg().write_type(2, &ps);
+    } else {
+        // STUB
+        i.msg().write_status(Qnx::QESRCH);
+    }
 }
 
 void MainHandler::proc_sigtab(MsgContext &i) {
@@ -565,10 +629,11 @@ void MainHandler::proc_fork(MsgContext &i) {
     } else {
         if (r == 0) {
             // in child
+            i.proc().update_pids_after_fork(getpid());
             reply.m_son_pid = 0;
         } else {
             // in parent
-            auto pid =  i.proc().pids().alloc_pid(r);
+            auto pid =  i.proc().pids().alloc_child_pid(r);
             reply.m_son_pid = pid->qnx_pid();
         }
         reply.m_status = Qnx::QEOK;
@@ -588,7 +653,7 @@ void MainHandler::proc_spawn(MsgContext &i) {
         perror("exec");
         exit(255);
     } else {
-        auto pid = i.proc().pids().alloc_pid(r);
+        auto pid = i.proc().pids().alloc_child_pid(r);
         reply.m_son_pid = pid->qnx_pid();
         reply.m_status = Qnx::QEOK;
     }
@@ -994,15 +1059,22 @@ void MainHandler::proc_sid_query(MsgContext &i)
 
     QnxMsg::proc::session_reply reply;
     clear(&reply);
-    if (msg.m_sid == i.proc().sid()) {
+
+    // In QNX, SIDs are a separate namespace, whereas in POSIX they share the PID namesace and inherit 
+    // the founders PID.
+    // The function also supports listing. We do not do that and just assume it is POSIX-style sid
+
+    auto sid_map = i.proc().pids().qnx(msg.m_sid);
+    if (!sid_map) {
+        reply.m_status = Qnx::QEINVAL;
+    } else {
+        // stub, we do not have any interesting info
         reply.m_status = Qnx::QEOK;
         reply.m_links = 1;
         strlcpy(reply.m_name, "sys", sizeof(reply.m_name));
-        reply.m_pid = i.proc().pid();
-        reply.m_sid = i.proc().sid();
+        reply.m_pid = msg.m_sid;
+        reply.m_sid = msg.m_sid;
         strlcpy(reply.m_tty_name, ctermid(nullptr), sizeof(reply.m_name));
-    } else {
-        reply.m_status = Qnx::QEOK;
     }
     i.msg().write_type(0, &reply);
 }
@@ -1681,4 +1753,109 @@ void MainHandler::dev_term_size(MsgContext &i) {
 
     reply.m_status = Qnx::QEOK;
     i.msg().write_type(0, &reply);
+}
+
+void MainHandler::dev_info(MsgContext &i) {
+    QnxMsg::dev::dev_info_request msg;
+    i.msg().read_type(&msg);
+
+    QnxMsg::dev::dev_info_reply reply;
+    clear(&reply);
+    auto fd = i.proc().fds().get_open_fd(msg.m_fd);
+    if (fill_dev_info(i, fd, &reply.m_info)) {
+        reply.m_status = Qnx::QEOK;
+    } else {
+        reply.m_status = Emu::map_errno(errno);
+    }
+    i.msg().write_type(0, &reply);
+}
+
+void MainHandler::dev_fdinfo(MsgContext &i) {
+    QnxMsg::dev::dev_fdinfo_request msg;
+    i.msg().read_type(&msg);
+
+    if (msg.m_pid != i.proc().pid()) {
+        i.msg().write_status(Qnx::QESRCH);
+        return;
+    }
+
+    QnxMsg::dev::dev_fdinfo_reply reply;
+    clear(&reply);
+    auto fd = i.proc().fds().get_open_fd(msg.m_fd);
+    if (fill_dev_info(i, fd, &reply.m_info)) {
+        reply.m_status = Qnx::QEOK;
+    } else {
+        reply.m_status = Emu::map_errno(errno);
+    }
+    i.msg().write_type(0, &reply);
+}
+
+bool MainHandler::fill_dev_info(MsgContext &i, QnxFd *fd, QnxMsg::dev::dev_info *dst) 
+{
+    // mostly make the stuff up, this is mostly system debugging information or does not map to Linux easily
+    dst->m_tty = 1;
+    dst->m_nid = i.proc().nid();
+    dst->m_driver_pid = i.proc().pid();
+    dst->m_nature = 0;
+    dst->m_attributes = 0;
+    dst->m_capabilities = 0xF; // readers, writers, winch, fwd (guesses)
+
+    std::string ttyname;
+    if (!Fsutil::ttyname(fd->m_host_fd, ttyname)) {
+        return false;
+    }
+
+    auto path = i.proc().path_mapper().map_path_to_qnx(ttyname.c_str());
+
+    if (strlen(path.qnx_path()) + 1 > sizeof(dst->m_tty_name)) {
+        strlcpy(dst->m_tty_name, "/dev/too-long", sizeof(dst->m_tty_name));
+    } else {
+        strlcpy(dst->m_tty_name, path.qnx_path(), sizeof(dst->m_tty_name));
+    }
+    return 0; 
+}
+
+void MainHandler::dev_tcgetpgrp(MsgContext &i) {
+    QnxMsg::dev::tcgetpgrp_request msg;
+    i.msg().read_type(&msg);
+
+    pid_t host_pgrp = tcgetpgrp(i.map_fd(msg.m_fd));
+    QnxMsg::dev::tcgetpgrp_reply reply;
+    clear(&reply);
+    if (host_pgrp < 0) {
+        reply.m_status = Emu::map_errno(errno);
+    } else {
+        auto pgrp = i.proc().pids().host(host_pgrp);
+        if (pgrp == nullptr) {
+            reply.m_pgpr = QnxPid::PID_UNKNOWN;
+        } else {
+            reply.m_pgpr = pgrp->qnx_pid();
+        }
+        reply.m_status = Qnx::QEOK;
+    }
+    i.msg().write_type(0, &msg);
+}
+
+
+void MainHandler::dev_tcsetpgrp(MsgContext &i) {
+    QnxMsg::dev::tcsetpgrp_request msg;
+    i.msg().read_type(&msg);
+
+    QnxMsg::dev::tcgetpgrp_reply reply;
+    clear(&reply);
+
+    int host_fd = i.map_fd(msg.m_fd);
+    auto pgrp_pid = i.proc().pids().qnx(msg.m_pgpr);
+
+    if (!pgrp_pid) {
+        reply.m_status = Qnx::QEINVAL;
+    } else {
+        int r = tcsetpgrp(host_fd, pgrp_pid->host_pid());
+        if (r < 0) {
+            reply.m_status = Emu::map_errno(errno);
+        } else {
+            reply.m_status = Qnx::QEOK;
+        }
+    }
+    i.msg().write_type(0, &msg);
 }

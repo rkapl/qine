@@ -21,7 +21,32 @@ bool readlink(const char *path, std::string& dst) {
             size *= 2;
             continue;
         } else {
-            dst[size] = 0;
+            dst.resize(size);
+            return true;
+        }
+    }
+}
+
+bool ttyname(int host_fd, std::string& dst) {
+    dst.clear();
+
+    size_t size = 256;
+    int r;
+
+    for (;;) {
+        dst.resize(size + 1);
+        r = ::ttyname_r(host_fd, dst.data(), dst.size());
+        // ttyname really stores the error in return, unlike anything else?
+        if (r < 0) {
+            if (r == ERANGE) {
+                size *= 2;
+                continue;
+            } else {
+                errno = r;
+                return false;
+            }
+        } else {
+            dst.resize(strlen(dst.c_str()));
             return true;
         }
     }

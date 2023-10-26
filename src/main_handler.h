@@ -12,10 +12,11 @@ namespace QnxMsg::io {
     struct stat;
 };
 
-class InconsistentFd: std::runtime_error {
-public:
-    InconsistentFd(): std::runtime_error("cannot obtain information for opened FD") {}
-};
+namespace QnxMsg::dev {
+    struct dev_info;
+}
+
+class QnxFd;
 
 /* Handles proc messages and passtrough FD messages */
 class MainHandler: public MsgHandler {
@@ -30,6 +31,7 @@ private:
     void proc_segment_realloc(MsgContext &i);
     void proc_segment_alloc(MsgContext &i);
     void proc_time(MsgContext &i);
+    void proc_setpgid(MsgContext &i);
     void proc_open(MsgContext &i);
     void proc_terminate(MsgContext &i);
     void proc_fd_attach(MsgContext &i);
@@ -87,5 +89,11 @@ private:
 
     void dev_tcgetattr(MsgContext &i);
     void dev_tcsetattr(MsgContext &i);
+    void dev_fdinfo(MsgContext &i);
+    void dev_info(MsgContext &i);
+    // errno if false
+    bool fill_dev_info(MsgContext &i, QnxFd *fd, QnxMsg::dev::dev_info *dst);
+    void dev_tcsetpgrp(MsgContext &i);
+    void dev_tcgetpgrp(MsgContext &i);
     void dev_term_size(MsgContext &i);
 };

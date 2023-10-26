@@ -26,6 +26,24 @@ QnxPid* PidMap::alloc_permanent_pid(Qnx::mpid_t pid, int host_pid)
     return pi;
 }
 
+QnxPid* PidMap::alloc_related_pid(int host_pid, QnxPid::Type type)
+{
+    assert(type == QnxPid::PGID || type == QnxPid::SID || type == QnxPid::SELF);
+    if (host_pid == -1) {
+        return nullptr;
+    }
+
+    auto pid_iter = m_reverse_map.find(host_pid);
+    if (pid_iter != m_reverse_map.end()) {
+        return pid_iter->second;
+    }
+
+    auto pid_info = alloc_empty();
+    pid_info->m_type = type;
+    pid_info->m_host_pid = host_pid;
+    return pid_info;
+}
+
 QnxPid *PidMap::alloc_empty() {
     auto try_pid = m_next_pid;
     auto start_pid = try_pid;
@@ -62,7 +80,7 @@ QnxPid *PidMap::alloc_empty() {
 }
 
 
-QnxPid* PidMap::alloc_pid(int host_pid)
+QnxPid* PidMap::alloc_child_pid(int host_pid)
 {
     if (host_pid >= 0) {
         assert(m_reverse_map.find(host_pid) == m_reverse_map.end());
@@ -92,11 +110,8 @@ QnxPid *PidMap::host(int pid) {
 }
 
 void PidMap::free_pid(QnxPid *pid) {
-    if (pid->m_type == QnxPid::EMPTY) {
-        /* nothing */
-    } else {
-        if (pid->m_host_pid > 0 && pid->m_type != QnxPid::PERMANENT)
-            m_reverse_map.erase(pid->host_pid());
+    if (pid->m_host_pid > 0 && pid->m_type == QnxPid::CHILD) {
+        m_reverse_map.erase(pid->host_pid());
     }
     m_qnx_map.erase(pid->qnx_pid());
 }

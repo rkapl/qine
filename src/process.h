@@ -50,6 +50,7 @@ public:
     static inline Process* current();
     static Process* create();
     void initialize(std::vector<std::string>&& self_call);
+    void update_pids_after_fork(pid_t new_pid);
 
     std::shared_ptr<Segment> allocate_segment();
     SegmentDescriptor* create_segment_descriptor(Access access, const std::shared_ptr<Segment>& mem);
@@ -67,7 +68,6 @@ public:
     Qnx::pid_t pid() const;
     Qnx::pid_t parent_pid() const;
     Qnx::nid_t nid() const;
-    Qnx::sid_t sid() const;
 
     const std::vector<std::string>& self_call() const;
 
@@ -91,6 +91,7 @@ private:
 
     SegmentDescriptor* descriptor_by_selector(uint16_t id);
     void setup_magic(SegmentDescriptor *data_sd, SegmentAllocator& alloc);
+    void initialize_pids();
 
     static Process* m_current;
 
@@ -98,13 +99,16 @@ private:
     IntrusiveList::List<Segment> m_segments;
     IdMap<SegmentDescriptor> m_segment_descriptors;
     
-    // "outsourced" component
+    // "outsourced" components
     Emu m_emu;
     FdMap m_fds;
     MainHandler m_main_handler;
     PathMapper m_path_mapper;
+
+    // pids
     PidMap m_pids;
-    QnxFd* m_my_pid;
+    QnxPid* m_my_pid;
+    QnxPid* m_parent_pid;
 
     // Qnx special memory areas
     std::shared_ptr<Segment> m_magic_pointer;

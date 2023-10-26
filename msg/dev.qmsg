@@ -32,6 +32,75 @@ msg tcsetattr {
      }
 }
 
+msg tcgetpgrp {
+     type: 0x316;
+     request {
+          fd: fd;
+     }
+     reply {
+          status: u16;
+          pgpr: pid;
+          padd: u16;
+     }
+}
+
+msg tcsetpgrp {
+     type: 0x317;
+
+     request {
+          fd: fd;
+          pgpr: pid;
+          padd: u16;
+     }
+     reply {
+          status: u16;
+     }
+}
+
+struct dev_info {
+    tty: i16;
+    nid: nid;
+    driver_pid: pid;
+    padd: u16;
+    nature: u16;
+    attributes: u16;
+    capabilities: u16;
+    driver_type: char[16];
+    tty_name: char[32];
+    unit: u16;
+    open_count: u16;
+    pgrp: pid;
+    padd: u16;
+    session: pid;
+    padd: u16;
+    flags: u16;
+    major: u16;
+}
+
+msg dev_info {
+     type: 0x31b;
+     request {
+          fd: fd;
+     }
+     reply {
+          status: u16;
+          info: dev_info;
+     }
+}
+
+msg dev_fdinfo {
+     type: 0x320;
+     request {
+          fd: fd;
+          pid: pid;
+          padd: u16;
+     }
+     reply {
+          status: u16;
+          info: dev_info;
+     }
+}
+
 msg term_size {
      type: 0x0323;
      request {

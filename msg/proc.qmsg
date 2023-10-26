@@ -43,6 +43,17 @@ msg fork {
     reply loaded_reply;
 }
 
+msg setpgid {
+    type: 7;
+    request {
+        pid: pid;
+        pgid: pid;
+    }
+    reply {
+        status: u16;
+    }
+}
+
 struct timer_args {
     flags: u16 hex;
     cookie: u16;

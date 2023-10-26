@@ -61,33 +61,50 @@ void Process::initialize(std::vector<std::string>&& self_call) {
     m_emu.init();
     m_fds.scan_host_fds(m_current->nid(), 1, 1);
 
+    initialize_pids();
+}
+
+void Process::initialize_pids() {
     // reserve the "proc" (QNX central process) pid
+    pid_t self = getpid();
+    pid_t ppid = getppid();
     m_pids.alloc_permanent_pid(QnxPid::PID_PROC, -1);
-    m_pids.alloc_permanent_pid(QnxPid::PID_PARENT, -1);
     m_pids.alloc_permanent_pid(QnxPid::PID_UNKNOWN, -1);
-    m_pids.alloc_permanent_pid(QnxPid::PID_SELF, getpid());
+    m_parent_pid = m_pids.alloc_permanent_pid(QnxPid::PID_ROOT_PARENT, ppid);
+
+    m_my_pid = m_pids.alloc_related_pid(self, QnxPid::Type::SELF);
+
+    m_pids.alloc_related_pid(getsid(ppid), QnxPid::Type::SID);
+    m_pids.alloc_related_pid(getpgid(ppid), QnxPid::Type::PGID);
+
+    m_pids.alloc_related_pid(getsid(self), QnxPid::Type::SID);
+    m_pids.alloc_related_pid(getpgid(self), QnxPid::Type::PGID);
+}
+
+void Process::update_pids_after_fork(pid_t new_pid) {
+    m_parent_pid = m_my_pid;
+    m_my_pid = m_pids.alloc_related_pid(new_pid, QnxPid::Type::SELF);
+    m_magic->my_pid = pid();
+    m_magic->dads_pid = parent_pid();
+    m_magic->my_nid = nid();
+    // printf("Updated PIDs: parent: qnx=%d host=%d\n", m_parent_pid->qnx_pid(), m_parent_pid->host_pid());
+    // printf("Updated PIDs: self: qnx=%d host=%d\n", m_my_pid->qnx_pid(), m_my_pid->host_pid());
 }
 
 Qnx::pid_t Process::pid() const
 {
-    return QnxPid::PID_SELF;
+    return m_my_pid->qnx_pid();
 }
 
 Qnx::pid_t Process::parent_pid() const
 {
-    return QnxPid::PID_PARENT;
+    return m_parent_pid->qnx_pid();
 }
 
 Qnx::pid_t Process::nid() const
 {
     return 0x1;
 }
-
-Qnx::sid_t Process::sid() const
-{
-    return 0x1;
-}
-
 const std::string& Process::file_name() const {
     return m_file_name;
 }
