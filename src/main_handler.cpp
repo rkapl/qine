@@ -44,6 +44,7 @@
 #include "types.h"
 #include "log.h"
 #include "qnx/pathconf.h"
+#include "unique_fd.h"
 #include "util.h"
 #include <gen_msg/proc.h>
 #include <gen_msg/io.h>
@@ -265,6 +266,9 @@ void MainHandler::receive_inner(MsgContext& i) {
             break;
         case QnxMsg::fsys::msg_fsync::TYPE:
             fsys_fsync(i);
+            break;
+        case QnxMsg::fsys::msg_pipe::TYPE:
+            fsys_pipe(i);
             break;
 
         case QnxMsg::dev::msg_tcgetattr::TYPE:
@@ -889,16 +893,16 @@ void MainHandler::proc_wait(MsgContext &i) {
             i.msg().write_status(Qnx::QECHILD);
             return;
         } else {
-            wait_code = msg.m_pid;
+            wait_code = pid->host_pid();
         }
 
     } else if (msg.m_pid < -1) {
-        auto pid = i.proc().pids().qnx(msg.m_pid);
+        auto pid = i.proc().pids().qnx(-msg.m_pid);
         if (!pid) {
             i.msg().write_status(Qnx::QECHILD);
             return;
         } else {
-            wait_code = -msg.m_pid;
+            wait_code = pid->host_pid();
         }
     }
 
@@ -997,27 +1001,16 @@ void MainHandler::io_open(MsgContext& i) {
     i.proc().path_mapper().map_path_to_host(fd->m_path);
     
     // TODO: handle cloexec and flags
-    int tmp_fd = ::open(fd->m_path.host_path(), mapped_oflags, msg.m_open.m_mode);
-    if (tmp_fd < 0) {
+    UniqueFd tmp_fd(::open(fd->m_path.host_path(), mapped_oflags, msg.m_open.m_mode));
+    if (!tmp_fd.valid()) {
         i.msg().write_status(Emu::map_errno(errno));
         return;
-    } else {
-        msg.m_type = 0;
     }
 
-    if (tmp_fd != fd->m_fd) {
-        // move fd to final location
-        int r = dup2(tmp_fd, fd->m_fd);
-        if (r < 0) {
-            i.msg().write_status(Emu::map_errno(errno));
-            close(tmp_fd);
-            return;
-        }
-        close(tmp_fd);
+    if (!fd->assign_fd(std::move(tmp_fd))) {
+        i.msg().write_status(Emu::map_errno(errno));
+        return;
     }
-
-    fd->m_host_fd = fd->m_fd;
-    fd->mark_open();
     i.msg().write_status(Qnx::QEOK);
 }
 
@@ -1663,6 +1656,30 @@ void MainHandler::fsys_fsync(MsgContext &i) {
     } else {
         i.msg().write_status(Emu::map_errno(errno));
     }
+}
+
+void MainHandler::fsys_pipe(MsgContext &i) {
+    QnxMsg::fsys::pipe_request msg;
+    i.msg().read_type(&msg);
+    auto fds = &i.proc().fds();
+    QnxFd* qnx_fds[2] = {
+        fds->get_attached_fd(msg.m_fd_in),
+        fds->get_attached_fd(msg.m_fd_out),
+    };
+
+    int host_fds[2];
+    int r = pipe(host_fds);
+    if (r < 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+        return;
+    }
+
+    // now we must move the FDs to correct locations
+    if (!fds->assign_fds(2, qnx_fds, host_fds)) {
+        i.msg().write_status(Emu::map_errno(errno));
+        return;
+    }
+    i.msg().write_status(Qnx::QEOK);
 }
 
 void MainHandler::dev_tcgetattr(MsgContext &i) {

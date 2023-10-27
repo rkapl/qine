@@ -15,6 +15,7 @@ public:
         LOADER,
         UNHANDLED,
         MAP,
+        FD,
         SIG,
     };
 

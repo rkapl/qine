@@ -36,10 +36,7 @@ bool UniqueFd::valid() const {
 
 int UniqueFd::release() {
     int old = m_fd;
-    if (valid()) {
-        close(m_fd);
-        m_fd = -1;
-    }
+    m_fd = -1;
     return old;
 }
 

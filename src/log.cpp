@@ -42,5 +42,8 @@ Log::Category Log::by_name(const char *name) {
     if (strcmp(name, "map") == 0) {
         return MAP;
     }
+    if (strcmp(name, "fd") == 0) {
+        return FD;
+    }
     return Category::INVALID;
 }

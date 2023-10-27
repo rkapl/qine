@@ -84,6 +84,7 @@ private:
     void fsys_readlink(MsgContext &i);
     void fsys_trunc(MsgContext &i);
     void fsys_fsync(MsgContext &i);
+    void fsys_pipe(MsgContext &i);
 
     void transfer_stat(QnxMsg::io::stat& dst, struct stat& src);
 

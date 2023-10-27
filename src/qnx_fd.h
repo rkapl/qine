@@ -3,6 +3,7 @@
 #include "qnx/types.h"
 #include "idmap.h"
 #include "path_mapper.h"
+#include "unique_fd.h"
 #include <dirent.h>
 #include <stdexcept>
 #include <string>
@@ -15,6 +16,8 @@ class FdMap {
   public:
     FdMap();
     ~FdMap();
+
+    // Create entries for existing host FDs at startup
     void scan_host_fds(Qnx::nid_t nid, Qnx::pid_t pid, Qnx::pid_t vid);
     
     // Corresponds to qnx_fd_attach with owner_pid zero. Throws NoFreeId
@@ -23,14 +26,22 @@ class FdMap {
     // Detaches FD, returns false if fd was not attached
     bool qnx_fd_detach(Qnx::fd_t fd);
 
-    /* Get an FD, checking that it is open with host FD, otherwise throw badfd
-     */
+    /* Get an FD, checking that it is open with host FD, otherwise throw badfd */
     inline QnxFd *get_open_fd(Qnx::fd_t fdi);
+    /* get_open_fd() -> host_fd*/
     inline int get_host_fd(Qnx::fd_t fdi) { return fdi; }
     /* Get an FD, otherwise throw badfd */
     inline QnxFd *get_attached_fd(Qnx::fd_t fdi);
     /* Finds a query higher or equal than start */
     QnxFd *fd_query(Qnx::fd_t start);
+
+    /* Used when creating multiple FDs. Takes N arbitrrary, already open host FDs
+     * and changes their FD numbers to match the QNX to_fd FDs and fills in the
+     * host FD numbers in the descriptors.
+     * 
+     * errno if false. Always takes ownership of the host_fd.
+     */
+    bool assign_fds(size_t count, QnxFd** to_fd, int *host_fd);
 
     // The rest of the function exist on QnxFd
   private:
@@ -44,7 +55,9 @@ class QnxFd {
           uint16_t flags);
     ~QnxFd();
 
-    void mark_open();
+    // Assign a host fd (after remapig) and mark open.
+    // errno if false
+    bool assign_fd(UniqueFd&& host_fd);
     bool close();
     void check_open();
 

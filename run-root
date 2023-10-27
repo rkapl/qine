@@ -1,0 +1,7 @@
+#!/bin/bash
+set -eux
+ninja -C build
+exec env "QNX_ROOT=$QNX_ROOT" "PATH=/bin:/usr/bin" \
+    build/qine -m /:$QNX_ROOT -m /host:/ \
+    "$@"
+

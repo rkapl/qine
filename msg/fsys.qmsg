@@ -97,3 +97,16 @@ msg fdinfo {
         path: path;
     }
 }
+
+msg pipe {
+    type: 0x20f;
+
+    request {
+        unit: u16;
+        fd_in: fd;
+        fd_out: fd;
+    }
+    reply {
+        status: u16;
+    }
+}
