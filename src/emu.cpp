@@ -248,7 +248,7 @@ void Emu::syscall_receivmx(GuestContext &ctx)
     uint8_t rcv_parts = ctx.reg_ah();
     GuestPtr rmsg = ctx.reg_ebx();
 
-    if (pid == ctx.proc()->pid() || pid == 0) {
+    if (pid == ctx.proc()->pid() || pid == QnxPid::PID_PROC || pid == 0) {
         pause();
         ctx.reg_eax() = Qnx::QEINTR;
     } else {
