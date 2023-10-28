@@ -1,7 +1,3 @@
-#include <bits/types/sigset_t.h>
-#include <csignal>
-#include <cstdint>
-#include <cstdio>
 #include <stdexcept>
 #include <vector>
 #include <errno.h>
@@ -54,6 +50,21 @@ qine_no_tls void Emu::static_handler_segv(int sig, siginfo_t *info, void *uctx_v
     Process::current()->m_emu.handler_segv(sig, info, uctx_void);
 }
 
+void Emu::handle_guest_segv(GuestContext &ctx, siginfo_t *info) {
+    auto act = qnx_sigtab(ctx.proc(), Qnx::QSIGSEGV);
+    // since we need to inspect all sigsegvs, we now need to emulate the behavior
+    if (is_special_sighandler(act->handler_fn)) {
+        // sigsegv cannot be ignored/blocked
+        debug_hook_problem();
+        fprintf(stderr, "Sigsegv in guest code, si_code=%x\n", info->si_code);
+        ctx.dump(stderr);
+        abort();
+    } else {
+        Log::print(Log::SIG, "Propagating SIGSEGV to host, handler will be %x\n", act->handler_fn);
+        signal_raise(Qnx::QSIGSEGV);
+    }
+}
+
 qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
 {
     ExtraContext ectx;
@@ -63,18 +74,28 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
     // now we have normal C environment
     debug_hook_sig_enter();
 
-    // unblock the signal, for better debugging and to not let someone inherit it
+    auto ctx = GuestContext(reinterpret_cast<ucontext_t*>(uctx_void), &ectx);
+    if (info->si_code <= 0) {
+        // this is not a real sigsegv, someone sent it (e.g. bash likes to send signals to itself)
+        handle_guest_segv(ctx, info);
+        signal_tail(ctx);
+        return;
+    }
+
+    // If we are in our code, it is our problem
+    if ((ctx.reg_cs() & SegmentDescriptor::SEL_LDT) == 0) {
+        debug_hook_problem();
+        fprintf(stderr, "Sigsegv in host code, %p, si_code=%x\n", reinterpret_cast<void*>(ctx.reg_eip()), info->si_code);
+        abort();
+    }
+
+    // unblock the signal, for better debugging, to avoid someone inheriting the mask if exec'd
+    // and to sent sigsegvs immediately
     sigset_t ss;
     sigemptyset(&ss);
     sigaddset(&ss, SIGSEGV);
     sigprocmask(SIG_UNBLOCK, &ss, nullptr);
 
-    auto ctx = GuestContext(reinterpret_cast<ucontext_t*>(uctx_void), &ectx);
-    if ((ctx.reg_cs() & SegmentDescriptor::SEL_LDT) == 0) {
-        debug_hook_problem();
-        fprintf(stderr, "Sigsegv in host code\n");
-        exit(1);
-    }
     auto eip = ctx.reg_eip();
     bool handled = false;
 
@@ -86,13 +107,16 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
     }
 
     if (ctx.read<uint8_t>(GuestContext::CS, eip) == 0xCD && ctx.read<uint8_t>(GuestContext::CS, eip + 1) == 0xF2) {
-        dispatch_syscall(ctx);
         ctx.reg_eip() += 2;
+        // note: syscall includes sysreturn which may change eip
+        dispatch_syscall(ctx);
         handled = true;
     }
     
     if (!handled) {
-        signal_raise(Qnx::QSIGSEGV);
+        ctx.dump(stderr, 64);
+        Emu::debug_hook_problem();
+        handle_guest_segv(ctx, info);
     }
 
     signal_tail(ctx);
@@ -111,13 +135,14 @@ qine_no_tls void Emu::handler_generic(int sig, siginfo_t *info, void *uctx_void)
     auto ctx = GuestContext(reinterpret_cast<ucontext_t*>(uctx_void), &ectx);
 
 
-    int qnx_sig = map_sig_host_to_qnx(sig);
+    int qnx_sig = QnxSigset::map_sig_host_to_qnx(sig);
     if (qnx_sig == -1) {
         // not async safe, but we are screwed anyway
         throw GuestStateException("Received signal, it is registered, but not QNX signal.");
     }
 
-    m_sigpend |= (1u << qnx_sig);
+    Log::print(Log::SIG, "Received signal %d\n", qnx_sig);;
+    m_sigpend.set_qnx_sig(qnx_sig);
 
     signal_tail(ctx);
 }
@@ -126,9 +151,17 @@ qine_no_tls void Emu::sync_host_sigmask(GuestContext &ctx) {
     // Synchronize the host sigmask state with emulated when we exit the signal
     // This is needed, because the signal mask and the list of pending signals
     // affects some calls, like TC SIGTTOU and tcsetpgrp
-    ctx.saved_sigmask() = map_sigmask_qnx_to_host(m_sigmask);
+    ctx.saved_sigmask() = m_sigmask.map_to_host_sigset();
     sigdelset(&ctx.saved_sigmask(), SIGSEGV);
-    //printf("setting host sigmask %lx\n", ctx.saved_sigmask().__val[0]);
+    //fprintf(stderr, "setting host sigmask %lx\n", ctx.saved_sigmask().__val[0]);
+}
+
+bool Emu::is_special_sighandler(uint32_t qnx_handler) {
+    return 
+        qnx_handler == Qnx::QSIG_DFL
+        || qnx_handler == Qnx::QSIG_HOLD
+        || qnx_handler == Qnx::QSIG_ERR
+        || qnx_handler == Qnx::QSIG_IGN;
 }
 
 /* 
@@ -136,14 +169,16 @@ qine_no_tls void Emu::sync_host_sigmask(GuestContext &ctx) {
  * for setting up QNX signal state if there is a pending signal.
  */
 qine_no_tls void Emu::signal_tail(GuestContext& ctx) {
-    auto activesig = (~m_sigmask) & m_sigpend;
+    auto proc = ctx.proc();
+    QnxSigset activesig = m_sigpend;
+    activesig.modify(m_sigmask, QnxSigset::empty());
 
     if ((ctx.reg_cs() & SegmentDescriptor::SEL_LDT) == 0) {
         /* We are returning to host code -- do not do anyting special */
         return;
     }
 
-    if (activesig == 0) {
+    if (activesig.is_empty()) {
         // return to QNX without activating any signal
         sync_host_sigmask(ctx);
         ctx.m_ectx->to_cpu();
@@ -151,41 +186,32 @@ qine_no_tls void Emu::signal_tail(GuestContext& ctx) {
     }
 
     /* Signal emulation: Find and pop the signal */
+    int qnx_sig = activesig.find_first();
+    m_sigpend.clear_qnx_sig(qnx_sig);
     
-    int qnx_sig;
-    for (qnx_sig = 0; qnx_sig < Qnx::QSIG_COUNT; qnx_sig++) {
-        if (activesig & (1u << qnx_sig))
-            break;
-    }
-    m_sigpend &= ~(1u << qnx_sig);
-    
-    /* Find it */
-    auto proc = ctx.proc();
-    if (!proc->m_sigtab) {
+    auto act = qnx_sigtab(proc, qnx_sig);
+    if (is_special_sighandler(act->handler_fn)) {
+        fprintf(stderr, "QNX signal %d has handler %x\n", qnx_sig, act->handler_fn);
         ctx.dump(stdout);
         debug_hook_problem();
-        throw GuestStateException("Received signal, but no sigtab registered by guest.");
+        throw GuestStateException("Received signal, but handler not registered -- should not happen");
     }
 
-    auto act = &proc->m_sigtab->actions[qnx_sig];
-    if (act->handler_fn == Qnx::QSIG_DFL || act->handler_fn == Qnx::QSIG_ERR || act->handler_fn == Qnx::QSIG_HOLD) {
-        ctx.dump(stdout);
-        debug_hook_problem();
-        throw GuestStateException("Received signal, but handler not registered");
-    }
-
-    uint32_t mask = act->mask | (1u << qnx_sig);
-    m_sigmask |= mask;
+    uint32_t save_sigmask = m_sigmask.m_value;
+    m_sigmask.m_value |= act->mask;
+    m_sigmask.set_qnx_sig(qnx_sig);
 
     sync_host_sigmask(ctx);
-    
-    ctx.save_context();
 
     // TODO: does QNX have redline?
     // TODO: does QNX have siginfo?
+    uint32_t old_esp = ctx.reg_esp();
+    ctx.reg_esp() -= REDLINE;
+    
+    ctx.save_context();
 
     // our stuff
-    ctx.push_stack(mask);
+    ctx.push_stack(save_sigmask);
 
     // arguments to sigstub
     ctx.push_stack(0); // unknown
@@ -194,16 +220,25 @@ qine_no_tls void Emu::signal_tail(GuestContext& ctx) {
 
     ctx.reg_cs() = proc->m_load.entry_main->m_segment;
     ctx.reg_eip() = proc->m_sigtab->sigstub;
-    Log::print(Log::SIG, "raised signal %d\n", qnx_sig);
+    Log::print(Log::SIG, "Emulating QNX signal %d, handler %x:%x, via stub %x, @esp %x, new mask %x, pending %x\n", 
+        qnx_sig,
+        proc->m_load.entry_main->m_segment, act->handler_fn, proc->m_sigtab->sigstub, 
+        old_esp,
+        m_sigmask.m_value, m_sigpend.m_value);
     ctx.m_ectx->to_cpu();
 }
 
 void Emu::syscall_sigreturn(GuestContext &ctx)
 {
-    uint32_t mask = ctx.pop_stack();
+    m_sigmask = ctx.pop_stack();
     ctx.restore_context();
 
-    m_sigmask &= ~mask;
+    ctx.reg_esp() += REDLINE;
+
+    Log::print(Log::SIG, "Return from emulated signal, new mask %x, @esp %x, to %x:%x\n", 
+        m_sigmask.m_value, ctx.reg_esp(),
+        ctx.reg_cs(), ctx.reg_eip()
+    );
 }
 
 
@@ -301,7 +336,7 @@ void Emu::syscall_kill(GuestContext &ctx)
         return;
     }
     int qnx_signo = ctx.reg_ebx();
-    int host_signo = map_sig_qnx_to_host(qnx_signo);
+    int host_signo = QnxSigset::map_sig_qnx_to_host(qnx_signo);
     if (host_signo == -1) {
         Log::print(Log::UNHANDLED, "QNX signal %d unknown\n", qnx_signo);
         ctx.reg_eax() = Qnx::QEINVAL;
@@ -313,8 +348,8 @@ void Emu::syscall_kill(GuestContext &ctx)
         ctx.reg_eax() = Qnx::QESRCH;
         return;
     } else {
+        Log::print(Log::SIG ,"syscall_kill host pid %d, signo %d\n", pid_info->host_pid(), qnx_signo);
         int r = kill(pid_info->host_pid(), host_signo);
-        // printf("kill %d %d\n", pid_info->host_pid(), qnx_signo);
         if (r < 0) {
             ctx.reg_eax() = map_errno(errno);
         } else {
@@ -325,16 +360,17 @@ void Emu::syscall_kill(GuestContext &ctx)
 
 void Emu::signal_raise(int qnx_sig)
 {
-    m_sigpend |= (1u << qnx_sig);
+    Log::print(Log::SIG, "Raising signal %d\n", qnx_sig);
+    m_sigpend.set_qnx_sig(qnx_sig);
 }
 
 void Emu::signal_mask(uint32_t change_mask, uint32_t bits)
 {
-    m_sigmask = (m_sigmask & ~change_mask) | bits;
+    m_sigmask.modify(QnxSigset(change_mask), QnxSigset(bits));
 }
 
 uint32_t Emu::signal_getmask() {
-    return m_sigmask;
+    return m_sigmask.m_value;
 }
 
 void Emu::debug_hook_problem() {
@@ -389,7 +425,7 @@ void Emu::enter_emu() {
     /* We map the host sigmask to guest sigmask */
     sigset_t current;
     sigprocmask(SIG_SETMASK, nullptr, &current);
-    m_sigmask = map_sigmask_host_to_qnx(current);
+    m_sigmask = QnxSigset::map_sigmask_host_to_qnx(current);
 
     /* We abuse the signal mechanism for a context switch, so that we do not need to use any other mechanism */
 
@@ -407,12 +443,12 @@ void Emu::enter_emu() {
 
 int Emu::signal_sigact(int qnx_sig, uint32_t handler, uint32_t mask)
 {
-    auto sigtab = Process::current()->m_sigtab;
-    if (!sigtab) {
-        throw GuestStateException("Sigtab not registered");
+    if (handler == Qnx::QSIG_HOLD) {
+        m_sigmask.set_qnx_sig(qnx_sig);
+        return Qnx::QEOK;
     }
 
-    int host_sig = map_sig_qnx_to_host(qnx_sig);
+    int host_sig = QnxSigset::map_sig_qnx_to_host(qnx_sig);
     if (host_sig == -1) {
         return Qnx::QEINVAL;
     }
@@ -428,8 +464,6 @@ int Emu::signal_sigact(int qnx_sig, uint32_t handler, uint32_t mask)
             sa.sa_handler = SIG_IGN;
         } else if (handler == Qnx::QSIG_ERR) {
             sa.sa_handler = SIG_ERR;
-        } else if (handler == Qnx::QSIG_HOLD) {
-            sa.sa_handler = SIG_HOLD;
         } else {
             sa.sa_sigaction = static_handler_generic;
         }
@@ -441,12 +475,21 @@ int Emu::signal_sigact(int qnx_sig, uint32_t handler, uint32_t mask)
     }
 
     Log::print(Log::SIG, "Registered signal %d, handler %x\n", qnx_sig, handler);   
-    auto si = &sigtab->actions[qnx_sig];
+    auto si = qnx_sigtab(Process::current(), qnx_sig);
     si->flags = 0;
     si->handler_fn = handler;
     si->mask = mask;
     
     return Qnx::QEOK;
+}
+
+Qnx::Sigaction* Emu::qnx_sigtab(Process *proc, int qnx_signo) {
+    assert(qnx_signo >= Qnx::QSIGMIN && qnx_signo <= Qnx::QSIGMAX);
+    auto sigtab = Process::current()->m_sigtab;
+    if (!sigtab) {
+        throw GuestStateException("Sigtab not registered");
+    }
+    return &sigtab->actions[qnx_signo - 1];
 }
 
 #define ERRNO_MAP \
@@ -544,80 +587,6 @@ Qnx::errno_t Emu::map_errno(int v) {
             return Qnx::QEIO;
     }
     #undef MAP
-}
-
-#define SIG_MAP \
-    MAP(SIGHUP, Qnx::QSIGHUP) \
-    MAP(SIGINT, Qnx::QSIGINT) \
-    MAP(SIGQUIT, Qnx::QSIGQUIT) \
-    MAP(SIGILL, Qnx::QSIGILL) \
-    MAP(SIGTRAP, Qnx::QSIGTRAP) \
-    MAP(SIGIOT, Qnx::QSIGIOT) \
-    MAP(SIGFPE, Qnx::QSIGFPE) \
-    MAP(SIGKILL, Qnx::QSIGKILL) \
-    MAP(SIGBUS, Qnx::QSIGBUS) \
-    MAP(SIGSEGV, Qnx::QSIGSEGV) \
-    MAP(SIGSYS, Qnx::QSIGSYS) \
-    MAP(SIGPIPE, Qnx::QSIGPIPE) \
-    MAP(SIGALRM, Qnx::QSIGALRM) \
-    MAP(SIGTERM, Qnx::QSIGTERM) \
-    MAP(SIGUSR1, Qnx::QSIGUSR1) \
-    MAP(SIGUSR2, Qnx::QSIGUSR2) \
-    MAP(SIGCHLD, Qnx::QSIGCHLD) \
-    MAP(SIGPWR, Qnx::QSIGPWR) \
-    MAP(SIGWINCH, Qnx::QSIGWINCH) \
-    MAP(SIGURG, Qnx::QSIGURG) \
-    MAP(SIGIO, Qnx::QSIGIO) \
-    MAP(SIGSTOP, Qnx::QSIGSTOP) \
-    MAP(SIGCONT, Qnx::QSIGCONT) \
-    MAP(SIGTTIN, Qnx::QSIGTTIN) \
-    MAP(SIGTTOU, Qnx::QSIGTTOU)
-
-// handle sigtstp, dev and emt separately
-
-int Emu::map_sig_host_to_qnx(int sig) {
-    #define MAP(h, q) case h: return q;
-    switch(sig) {
-        SIG_MAP
-        default:
-            return -1;
-    }
-    #undef MAP
-}
-
-int Emu::map_sig_qnx_to_host(int sig) {
-    #define MAP(h, q) case q: return h;
-    switch(sig) {
-        SIG_MAP
-        default:
-            return -1;
-    }
-    #undef MAP
-}
-
-sigset_t Emu::map_sigmask_qnx_to_host(uint32_t mask) {
-    sigset_t acc;
-    sigemptyset(&acc);
-    for (int sig = 0; sig < 32; sig++) {
-        int host_sig = map_sig_qnx_to_host(sig);
-        if (host_sig < 0)
-            continue;
-        if (mask & (1u << sig))
-            sigaddset(&acc, host_sig);
-    }
-    return acc;
-}
-
-uint32_t Emu::map_sigmask_host_to_qnx(sigset_t &host_set) {
-    uint32_t acc = 0;
-    for (int sig = 0; sig < 32; sig++) {
-        int host_sig = map_sig_qnx_to_host(sig);
-        if (host_sig < 0)
-            continue;
-        if (sigismember(&host_set, host_sig))
-            acc |= 1 << sig;
-    }
-    return acc;
 }
 
 Emu::~Emu() {

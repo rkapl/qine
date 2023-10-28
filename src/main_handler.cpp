@@ -941,9 +941,9 @@ void MainHandler::proc_wait(MsgContext &i) {
         // QNX status has the form (0xEESS) (EE is error status, SS is signal code)
         // Stop signalling is not supported
         if (WIFSIGNALED(host_status)) {
-            reply.m_xstatus = Emu::map_sig_host_to_qnx(WTERMSIG(host_status));
+            reply.m_xstatus = QnxSigset::map_sig_host_to_qnx(WTERMSIG(host_status));
         } else if (WIFSTOPPED(host_status)) {
-            reply.m_xstatus = Emu::map_sig_host_to_qnx(WSTOPSIG(host_status));
+            reply.m_xstatus = QnxSigset::map_sig_host_to_qnx(WSTOPSIG(host_status));
         } else {
             reply.m_xstatus = WEXITSTATUS(host_status) << 8;
         }

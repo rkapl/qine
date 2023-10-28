@@ -13,6 +13,10 @@ int main(void) {
   act.sa_mask = 0;
   act.sa_handler = &handler;
   
+  printf("ex! sigaction\n");
+  printf("ex! signal\n");
+  printf("ex! after_signal\n");
+
   if (sigaction(SIGUSR1, &act, NULL) == 0) {
     printf("ok! sigaction\n");
   } else {
@@ -26,7 +30,7 @@ int main(void) {
     printf("no! signal not seen\n");
   }
 
-  /* Program will terminate with a SIGUSR2 */
+  printf("ok! after_signal\n");
   return 0;
 }
 

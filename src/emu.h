@@ -5,11 +5,11 @@
 #include <memory>
 #include <stdexcept>
 #include <sys/ucontext.h>
-#include <bitset>
 
 #include "guest_context.h"
 #include "qnx/errno.h"
 #include "qnx/procenv.h"
+#include "qnx_sigset.h"
 
 class Segment;
 class Process;
@@ -31,10 +31,6 @@ public:
     static void debug_hook_sig_enter();
 
     static Qnx::errno_t map_errno(int v);
-    static int map_sig_host_to_qnx(int sig);
-    static int map_sig_qnx_to_host(int sig);
-    static sigset_t map_sigmask_qnx_to_host(uint32_t mask);
-    static uint32_t map_sigmask_host_to_qnx(sigset_t &host_set);
     
     ~Emu();
 private:
@@ -46,9 +42,13 @@ private:
     void syscall_receivmx(GuestContext& ctx);
 
     void handler_segv(int sig, siginfo_t *info, void *uctx);
+    void handle_guest_segv(GuestContext &ctx, siginfo_t *info);
     void handler_generic(int sig, siginfo_t *info, void *uctx);
     void signal_tail(GuestContext& ctx);
     void sync_host_sigmask(GuestContext &ctx);
+
+    static bool is_special_sighandler(uint32_t qnx_handler);
+    static Qnx::Sigaction* qnx_sigtab(Process *proc, int qnx_signo);
 
     static void static_handler_segv(int sig, siginfo_t *info, void *uctx);
     static void static_handler_user(int sig, siginfo_t *info, void *uctx);
@@ -62,7 +62,9 @@ private:
      * a) we must raise the simulated signal always when leaving the outermost signal (hence sigpend)
      * b) calling sigprocmask is useless, since it will be restored when exiting signal
      */
-    uint32_t m_sigpend;
-    uint32_t m_sigmask;
+    QnxSigset m_sigpend;
+    QnxSigset m_sigmask;
+
+    static constexpr int REDLINE = 128;
 };
 

@@ -33,6 +33,9 @@ static constexpr int QSIGTTIN = 26;  /* attempted background tty read */
 static constexpr int QSIGTTOU = 27;  /* attempted background tty write */
 static constexpr int QSIGDEV = 28;  /* Dev event */
 
+static constexpr int QSIGMAX = 32;
+static constexpr int QSIGMIN = 1;
+
 static constexpr uint32_t QSIG_ERR = UINT32_MAX;
 static constexpr uint32_t QSIG_DFL = 0;
 static constexpr uint32_t QSIG_IGN = 1;
