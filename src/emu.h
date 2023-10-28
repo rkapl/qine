@@ -34,6 +34,7 @@ public:
     static int map_sig_host_to_qnx(int sig);
     static int map_sig_qnx_to_host(int sig);
     static sigset_t map_sigmask_qnx_to_host(uint32_t mask);
+    static uint32_t map_sigmask_host_to_qnx(sigset_t &host_set);
     
     ~Emu();
 private:
@@ -47,6 +48,7 @@ private:
     void handler_segv(int sig, siginfo_t *info, void *uctx);
     void handler_generic(int sig, siginfo_t *info, void *uctx);
     void signal_tail(GuestContext& ctx);
+    void sync_host_sigmask(GuestContext &ctx);
 
     static void static_handler_segv(int sig, siginfo_t *info, void *uctx);
     static void static_handler_user(int sig, siginfo_t *info, void *uctx);
@@ -56,7 +58,10 @@ private:
 
     std::shared_ptr<Segment> m_emulation_stack;
 
-    /* We need to emulate the masks and pending bits */
+    /* We need to emulate the masks and pending bits, we cannot directly use the host signals, because
+     * a) we must raise the simulated signal always when leaving the outermost signal (hence sigpend)
+     * b) calling sigprocmask is useless, since it will be restored when exiting signal
+     */
     uint32_t m_sigpend;
     uint32_t m_sigmask;
 };

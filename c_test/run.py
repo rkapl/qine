@@ -37,7 +37,7 @@ def exec(args):
 
 test_results = []
 
-def run_test(test):
+def run_test(test, single=False):
     os.chdir(c_test)
     test = PurePath(test).stem
     test_dir = build / test
@@ -79,6 +79,9 @@ def run_test(test):
     r = proc.wait()
     if r != 0:
         failures.append('no! retcode\n')
+        if single:
+            print(f'Test failed with {r}')
+            sys.exit(r)
 
     test_results.append(TestResult(test, failures))
 
@@ -99,4 +102,4 @@ if args.test is None:
             for r in t.failures:
                 print(f'  {r}')
 else:
-    run_test(args.test)
+    run_test(args.test, single=True)

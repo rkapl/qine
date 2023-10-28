@@ -122,6 +122,15 @@ qine_no_tls void Emu::handler_generic(int sig, siginfo_t *info, void *uctx_void)
     signal_tail(ctx);
 }
 
+qine_no_tls void Emu::sync_host_sigmask(GuestContext &ctx) {
+    // Synchronize the host sigmask state with emulated when we exit the signal
+    // This is needed, because the signal mask and the list of pending signals
+    // affects some calls, like TC SIGTTOU and tcsetpgrp
+    ctx.saved_sigmask() = map_sigmask_qnx_to_host(m_sigmask);
+    sigdelset(&ctx.saved_sigmask(), SIGSEGV);
+    //printf("setting host sigmask %lx\n", ctx.saved_sigmask().__val[0]);
+}
+
 /* 
  * This functions is called on exit from a host signal and is responsible 
  * for setting up QNX signal state if there is a pending signal.
@@ -135,11 +144,13 @@ qine_no_tls void Emu::signal_tail(GuestContext& ctx) {
     }
 
     if (activesig == 0) {
+        // return to QNX without activating any signal
+        sync_host_sigmask(ctx);
         ctx.m_ectx->to_cpu();
         return;
     }
 
-    /* Find and pop the signal */
+    /* Signal emulation: Find and pop the signal */
     
     int qnx_sig;
     for (qnx_sig = 0; qnx_sig < Qnx::QSIG_COUNT; qnx_sig++) {
@@ -165,6 +176,8 @@ qine_no_tls void Emu::signal_tail(GuestContext& ctx) {
 
     uint32_t mask = act->mask | (1u << qnx_sig);
     m_sigmask |= mask;
+
+    sync_host_sigmask(ctx);
     
     ctx.save_context();
 
@@ -281,19 +294,33 @@ void Emu::syscall_sendmx(GuestContext &ctx)
 
 void Emu::syscall_kill(GuestContext &ctx)
 {
-    int pid = ctx.reg_edx();
-    int qnx_signo = ctx.reg_ebx();
-    int host_signo = map_sig_qnx_to_host(qnx_signo);
-    if (host_signo == -1) {
+    int32_t pid = ctx.reg_edx();
+    if (pid < 0) {
+        Log::print(Log::UNHANDLED, "signal negative pid. process group?\n");
         ctx.reg_eax() = Qnx::QEINVAL;
         return;
     }
-    if (pid != Process::current()->pid()) {
-        ctx.reg_eax() = Qnx::QESRCH;
+    int qnx_signo = ctx.reg_ebx();
+    int host_signo = map_sig_qnx_to_host(qnx_signo);
+    if (host_signo == -1) {
+        Log::print(Log::UNHANDLED, "QNX signal %d unknown\n", qnx_signo);
+        ctx.reg_eax() = Qnx::QEINVAL;
         return;
     }
-    signal_raise(qnx_signo);
-    ctx.reg_eax() = Qnx::QEOK;
+
+    auto pid_info = ctx.proc()->pids().qnx(pid);
+    if (!pid_info) {
+        ctx.reg_eax() = Qnx::QESRCH;
+        return;
+    } else {
+        int r = kill(pid_info->host_pid(), host_signo);
+        // printf("kill %d %d\n", pid_info->host_pid(), qnx_signo);
+        if (r < 0) {
+            ctx.reg_eax() = map_errno(errno);
+        } else {
+            ctx.reg_eax() = Qnx::QEOK;
+        }
+    }
 }
 
 void Emu::signal_raise(int qnx_sig)
@@ -359,7 +386,16 @@ void Emu::enter_emu() {
         throw std::runtime_error(strerror(errno));
     }
 
-    /* We abuse the signal mechanism for a context switch*/
+    /* We map the host sigmask to guest sigmask */
+    sigset_t current;
+    sigprocmask(SIG_SETMASK, nullptr, &current);
+    m_sigmask = map_sigmask_host_to_qnx(current);
+
+    /* We abuse the signal mechanism for a context switch, so that we do not need to use any other mechanism */
+
+    sigdelset(&current, SIGUSR1);
+    sigprocmask(SIG_SETMASK, &current, nullptr);
+
     sa.sa_sigaction = Emu::static_handler_user;
     sa.sa_flags = SA_SIGINFO | SA_RESETHAND | SA_ONSTACK;
     sigemptyset(&sa.sa_mask);
@@ -564,10 +600,22 @@ sigset_t Emu::map_sigmask_qnx_to_host(uint32_t mask) {
     sigemptyset(&acc);
     for (int sig = 0; sig < 32; sig++) {
         int host_sig = map_sig_qnx_to_host(sig);
-        if (host_sig)
+        if (host_sig < 0)
             continue;
         if (mask & (1u << sig))
             sigaddset(&acc, host_sig);
+    }
+    return acc;
+}
+
+uint32_t Emu::map_sigmask_host_to_qnx(sigset_t &host_set) {
+    uint32_t acc = 0;
+    for (int sig = 0; sig < 32; sig++) {
+        int host_sig = map_sig_qnx_to_host(sig);
+        if (host_sig < 0)
+            continue;
+        if (sigismember(&host_set, host_sig))
+            acc |= 1 << sig;
     }
     return acc;
 }

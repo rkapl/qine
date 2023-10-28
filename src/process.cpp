@@ -219,7 +219,7 @@ void Process::handle_msg(MsgContext& m)
                 ml = &QnxMsg::dev::list;
                 break;
             default:
-                printf("Msg receiver unknown, cannot dump\n");
+                fprintf(stderr, "Msg receiver unknown, cannot dump\n");
                 break;
         }
         if (ml)
@@ -230,12 +230,12 @@ void Process::handle_msg(MsgContext& m)
         find_msg();
         if (msg_type) {
             if (m.m_via_fd) {
-                fprintf(stdout, "request %s fd %d {\n", msg_type->m_name, m.m_fd);
+                fprintf(s, "request %s fd %d {\n", msg_type->m_name, m.m_fd);
             } else {
-                fprintf(stdout, "request %s pid %d {\n", msg_type->m_name, m.m_pid);
+                fprintf(s, "request %s pid %d {\n", msg_type->m_name, m.m_pid);
             }
             Meta::dump_structure(s, *msg_type->m_request, msg);
-            fprintf(stdout, "}\n");
+            fprintf(s, "}\n");
         } else {
             msg.dump_send(s);
         }
@@ -248,9 +248,9 @@ void Process::handle_msg(MsgContext& m)
     Log::if_enabled(Log::MSG_REPLY, [&](FILE *s) {
         find_msg();
         if (msg_type) {
-            fprintf(stdout, "reply %s {\n", msg_type->m_name);
+            fprintf(s, "reply %s {\n", msg_type->m_name);
             Meta::dump_structure_written(s, *msg_type->m_reply, msg);
-            fprintf(stdout, "}\n");
+            fprintf(s, "}\n");
         }
     });
 }

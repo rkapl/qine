@@ -41,6 +41,8 @@ QnxPid* PidMap::alloc_related_pid(int host_pid, QnxPid::Type type)
     auto pid_info = alloc_empty();
     pid_info->m_type = type;
     pid_info->m_host_pid = host_pid;
+
+    m_reverse_map[pid_info->m_host_pid] = pid_info;
     return pid_info;
 }
 

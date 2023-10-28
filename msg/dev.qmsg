@@ -39,7 +39,7 @@ msg tcgetpgrp {
      }
      reply {
           status: u16;
-          pgpr: pid;
+          pgrp: pid;
           padd: u16;
      }
 }
@@ -49,7 +49,7 @@ msg tcsetpgrp {
 
      request {
           fd: fd;
-          pgpr: pid;
+          pgrp: pid;
           padd: u16;
      }
      reply {

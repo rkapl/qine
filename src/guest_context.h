@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/ucontext.h>
 
@@ -61,7 +62,7 @@ public:
     void push_stack(uint32_t value);
     uint32_t pop_stack();
 
-    // Save/restore registers to stack, can be used for e.g. stack handlers
+    // Save/restore registers to stack in QNX format, can be used for e.g. stack handlers
     void save_context();
     void restore_context();
 
@@ -96,6 +97,7 @@ public:
     inline uint16_t& reg_ss() { return greg_shift<uint16_t>(REG_CSGSFS, 48);};
 
     inline size_t reg_trapno() { return greg(REG_TRAPNO); };
+    inline sigset_t& saved_sigmask() { return m_ctx->uc_sigmask; };
 
     inline uint8_t&  reg_al()  { return greg_shift<uint8_t>(REG_RAX, 0); }
     inline uint8_t&  reg_ah()  { return greg_shift<uint8_t>(REG_RAX, 8); }
@@ -105,12 +107,6 @@ public:
     #else
     #error 32bit unsupported for now
     #endif
-
-    inline uint8_t reg_al() const;
-    inline uint8_t reg_ah() const;
-    inline uint8_t reg_cl() const;
-    inline uint8_t reg_ch() const;
-
 
 private:
     #ifdef __amd64__

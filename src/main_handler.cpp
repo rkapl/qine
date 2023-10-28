@@ -529,6 +529,12 @@ void MainHandler::proc_psinfo(MsgContext &i)
         Qnx::psinfo ps;
         clear(&ps);
         ps.pid = proc->pid();
+        auto pgid_info = proc->pids().host(getpgid(0));
+        if (pgid_info) {
+            ps.pid_group = pgid_info->qnx_pid();
+        } else {
+            ps.pid_group = QnxPid::PID_UNKNOWN;
+        }
         ps.rgid = getgid();
         ps.ruid = getuid();
         ps.egid = getegid();
@@ -639,6 +645,7 @@ void MainHandler::proc_fork(MsgContext &i) {
             // in parent
             auto pid =  i.proc().pids().alloc_child_pid(r);
             reply.m_son_pid = pid->qnx_pid();
+            //fprintf(stderr, "forked child %d (qnx %d)\n", r, reply.m_son_pid);
         }
         reply.m_status = Qnx::QEOK;
     }
@@ -911,10 +918,17 @@ void MainHandler::proc_wait(MsgContext &i) {
         wait_options |= WNOHANG;
 
     int host_status;
+    //fprintf(stderr, "%d: start waitpid(%d)\n", getpid(), wait_code);
     pid_t child_host_pid = waitpid(wait_code, &host_status, wait_options);
 
     if (child_host_pid < 0) {
+        //fprintf(stderr, "%d: waitpid %s\n", getpid(), strerror(errno));
         reply.m_status = Emu::map_errno(errno);
+        reply.m_pid = -1;
+    } else if (child_host_pid == 0) {
+        //fprintf(stderr, "%d: waitpid = 0\n", getpid());
+        reply.m_status = Qnx::QEOK;
+        reply.m_pid = 0;
     } else {
         auto child_pid = i.proc().pids().host(child_host_pid);
         if (child_pid) {
@@ -933,6 +947,7 @@ void MainHandler::proc_wait(MsgContext &i) {
         } else {
             reply.m_xstatus = WEXITSTATUS(host_status) << 8;
         }
+        //fprintf(stderr, "%d: waitpid = %d (qnx %d), status %x\n", getpid(), child_host_pid, reply.m_pid, reply.m_xstatus);
     }
     i.msg().write_type(0, &reply);
 }
@@ -1844,13 +1859,13 @@ void MainHandler::dev_tcgetpgrp(MsgContext &i) {
     } else {
         auto pgrp = i.proc().pids().host(host_pgrp);
         if (pgrp == nullptr) {
-            reply.m_pgpr = QnxPid::PID_UNKNOWN;
+            reply.m_pgrp = QnxPid::PID_UNKNOWN;
         } else {
-            reply.m_pgpr = pgrp->qnx_pid();
+            reply.m_pgrp = pgrp->qnx_pid();
         }
         reply.m_status = Qnx::QEOK;
     }
-    i.msg().write_type(0, &msg);
+    i.msg().write_type(0, &reply);
 }
 
 
@@ -1862,11 +1877,12 @@ void MainHandler::dev_tcsetpgrp(MsgContext &i) {
     clear(&reply);
 
     int host_fd = i.map_fd(msg.m_fd);
-    auto pgrp_pid = i.proc().pids().qnx(msg.m_pgpr);
+    auto pgrp_pid = i.proc().pids().qnx(msg.m_pgrp);
 
     if (!pgrp_pid) {
         reply.m_status = Qnx::QEINVAL;
     } else {
+        //printf("setting pgprp to %d from %d\n", pgrp_pid->host_pid(), getpid());
         int r = tcsetpgrp(host_fd, pgrp_pid->host_pid());
         if (r < 0) {
             reply.m_status = Emu::map_errno(errno);
@@ -1874,5 +1890,5 @@ void MainHandler::dev_tcsetpgrp(MsgContext &i) {
             reply.m_status = Qnx::QEOK;
         }
     }
-    i.msg().write_type(0, &msg);
+    i.msg().write_type(0, &reply);
 }
