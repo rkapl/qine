@@ -51,13 +51,13 @@ qine_no_tls void Emu::static_handler_segv(int sig, siginfo_t *info, void *uctx_v
 }
 
 void Emu::handle_guest_segv(GuestContext &ctx, siginfo_t *info) {
-    auto act = qnx_sigtab(ctx.proc(), Qnx::QSIGSEGV);
+    auto act = qnx_sigtab(ctx.proc(), Qnx::QSIGSEGV, false);
     // since we need to inspect all sigsegvs, we now need to emulate the behavior
-    if (is_special_sighandler(act->handler_fn)) {
+    if (!act || is_special_sighandler(act->handler_fn)) {
         // sigsegv cannot be ignored/blocked
-        debug_hook_problem();
         fprintf(stderr, "Sigsegv in guest code, si_code=%x\n", info->si_code);
         ctx.dump(stderr);
+        debug_hook_problem();
         abort();
     } else {
         Log::print(Log::SIG, "Propagating SIGSEGV to host, handler will be %x\n", act->handler_fn);
@@ -96,7 +96,6 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
     sigaddset(&ss, SIGSEGV);
     sigprocmask(SIG_UNBLOCK, &ss, nullptr);
 
-    auto eip = ctx.reg_eip();
     bool handled = false;
 
     if (ctx.reg_es() == Qnx::MAGIC_PTR_SELECTOR) {
@@ -106,7 +105,7 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
         handled = true;
     }
 
-    if (ctx.read<uint8_t>(GuestContext::CS, eip) == 0xCD && ctx.read<uint8_t>(GuestContext::CS, eip + 1) == 0xF2) {
+    if (matches_syscall(ctx)) {
         ctx.reg_eip() += 2;
         // note: syscall includes sysreturn which may change eip
         dispatch_syscall(ctx);
@@ -114,12 +113,24 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
     }
     
     if (!handled) {
-        ctx.dump(stderr, 64);
-        Emu::debug_hook_problem();
+        //ctx.dump(stderr, 64);
+        //Emu::debug_hook_problem();
         handle_guest_segv(ctx, info);
     }
 
     signal_tail(ctx);
+}
+
+bool Emu::matches_syscall(GuestContext &ctx) {
+    auto eip = ctx.reg_eip();
+    auto b1 = ctx.read<uint8_t>(GuestContext::CS, eip);
+    // prefix
+    if (b1 == 0x66) {
+        eip++;
+        b1 = ctx.read<uint8_t>(GuestContext::CS, eip);
+    }
+
+    return b1 == 0xCD && ctx.read<uint8_t>(GuestContext::CS, eip + 1) == 0xF2;
 }
 
 qine_no_tls void Emu::static_handler_generic(int sig, siginfo_t *info, void *uctx) {
@@ -489,11 +500,14 @@ int Emu::signal_sigact(int qnx_sig, uint32_t handler, uint32_t mask)
     return Qnx::QEOK;
 }
 
-Qnx::Sigaction* Emu::qnx_sigtab(Process *proc, int qnx_signo) {
+Qnx::Sigaction* Emu::qnx_sigtab(Process *proc, int qnx_signo, bool required) {
     assert(qnx_signo >= Qnx::QSIGMIN && qnx_signo <= Qnx::QSIGMAX);
     auto sigtab = Process::current()->m_sigtab;
     if (!sigtab) {
-        throw GuestStateException("Sigtab not registered");
+        if (required)
+            throw GuestStateException("Sigtab not registered");
+        else
+            return nullptr;
     }
     return &sigtab->actions[qnx_signo - 1];
 }

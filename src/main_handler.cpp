@@ -1761,15 +1761,18 @@ bool MainHandler::fill_dev_info(MsgContext &i, QnxFd *fd, QnxMsg::dev::dev_info 
     // mostly make the stuff up, this is mostly system debugging information or does not map to Linux easily
     dst->m_tty = 1;
     dst->m_nid = i.proc().nid();
-    dst->m_driver_pid = i.proc().pid();
+    dst->m_driver_pid = QnxPid::PID_PROC;
     dst->m_nature = 0;
     dst->m_attributes = 0;
     dst->m_capabilities = 0xF; // readers, writers, winch, fwd (guesses)
+    dst->m_open_count = 1;
 
     std::string ttyname;
     if (!Fsutil::ttyname(fd->m_host_fd, ttyname)) {
         return false;
     }
+
+    strlcpy(dst->m_driver_type, "pseudo", sizeof(dst->m_driver_type));
 
     auto path = i.proc().path_mapper().map_path_to_qnx(ttyname.c_str());
 
@@ -1778,5 +1781,5 @@ bool MainHandler::fill_dev_info(MsgContext &i, QnxFd *fd, QnxMsg::dev::dev_info 
     } else {
         strlcpy(dst->m_tty_name, path.qnx_path(), sizeof(dst->m_tty_name));
     }
-    return 0; 
+    return true; 
 }

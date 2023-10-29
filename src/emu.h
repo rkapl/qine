@@ -48,11 +48,13 @@ private:
     void sync_host_sigmask(GuestContext &ctx);
 
     static bool is_special_sighandler(uint32_t qnx_handler);
-    static Qnx::Sigaction* qnx_sigtab(Process *proc, int qnx_signo);
+    static Qnx::Sigaction* qnx_sigtab(Process *proc, int qnx_signo, bool required=true);
 
     static void static_handler_segv(int sig, siginfo_t *info, void *uctx);
     static void static_handler_user(int sig, siginfo_t *info, void *uctx);
     static void static_handler_generic(int sig, siginfo_t *info, void *uctx);
+
+    static bool matches_syscall(GuestContext &ctx);
 
     TlsFixup m_tls_fixup;
 

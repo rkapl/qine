@@ -52,6 +52,60 @@ void MainHandler::terminal_qioctl(Ioctl &i) {
     #endif
 }
 
+#define CC_MAP \
+    MAP(QVINTR, VINTR) \
+    MAP(QVQUIT, VQUIT) \
+    MAP(QVERASE, VERASE) \
+    MAP(QVKILL, VKILL) \
+    MAP(QVEOF, VEOF) \
+    MAP(QVEOL, VEOL) \
+    MAP(QVSTART, VSTART) \
+    MAP(QVSTOP, VSTOP) \
+    MAP(QVSUSP, VSUSP) \
+    MAP(QVMIN, VMIN) \
+    MAP(QVTIME, VTIME) \
+
+#define IFLAG_MAP \
+    MAP(QIGNBRK, IGNBRK) \
+    MAP(QBRKINT, BRKINT) \
+    MAP(QIGNPAR, IGNPAR) \
+    MAP(QPARMRK, PARMRK) \
+    MAP(QINPCK, INPCK) \
+    MAP(QISTRIP, ISTRIP) \
+    MAP(QINLCR, INLCR) \
+    MAP(QIGNCR, IGNCR) \
+    MAP(QICRNL, ICRNL) \
+    MAP(QIXOFF, IXOFF) \
+    MAP(QIXON, IXON) 
+
+#define OFLAG_MAP \
+    MAP(QOPOST, OPOST)
+
+#define CFLAG_MAP \
+    MAP(QCSIZE, CSIZE) \
+    MAP(QCS5, CS5) \
+    MAP(QCS6, CS6) \
+    MAP(QCS7, CS7) \
+    MAP(QCS8, CS8) \
+    MAP(QCSTOPB, CSTOPB) \
+    MAP(QCREAD, CREAD) \
+    MAP(QPARENB, PARENB) \
+    MAP(QPARODD, PARODD) \
+    MAP(QHUPCL, HUPCL) \
+    MAP(QCLOCAL, CLOCAL)
+
+#define LFLAG_MAP \
+    MAP(QISIG, ISIG) \
+    MAP(QICANON, ICANON) \
+    MAP(QECHO, ECHO) \
+    MAP(QECHOE, ECHOE) \
+    MAP(QECHOK, ECHOK) \
+    MAP(QECHONL, ECHONL) \
+    MAP(QNOFLSH, NOFLSH) \
+    MAP(QTOSTOP, TOSTOP) \
+    MAP(QIEXTEN, IEXTEN)
+
+
 uint16_t MainHandler::handle_tcgetattr(MsgContext &i, int16_t qnx_fd, Qnx::termios *qnx_attr) {
     struct termios attr;
     int r = tcgetattr(i.map_fd(qnx_fd), &attr);
@@ -59,36 +113,93 @@ uint16_t MainHandler::handle_tcgetattr(MsgContext &i, int16_t qnx_fd, Qnx::termi
         return Emu::map_errno(errno);
     }
 
-    // TODO: do a real translate
-    for(size_t i = 0; i < std::min(NCCS, Qnx::Q_NCCS); i++) {
-        qnx_attr->c_cc[i] = attr.c_cc[i];
+    #define MAP(qnx, host) qnx_attr->c_cc[Qnx::qnx] = attr.c_cc[host];
+    CC_MAP
+    #undef MAP
+
+    #define MAP_FIELD(field, qnx, host) \
+        qnx_attr->field &= ~Qnx::qnx; \
+        if (attr.field & host) qnx_attr->field |= Qnx::qnx;
+
+    #define MAP(qnx, host) MAP_FIELD(c_iflag, qnx, host)
+    IFLAG_MAP
+    #undef MAP
+
+    #define MAP(qnx, host) MAP_FIELD(c_oflag, qnx, host)
+    OFLAG_MAP
+    #undef MAP
+
+    #define MAP(qnx, host) MAP_FIELD(c_cflag, qnx, host)
+    CFLAG_MAP
+    #undef MAP
+
+    #define MAP(qnx, host) MAP_FIELD(c_lflag, qnx, host)
+    LFLAG_MAP
+    #undef MAP
+
+    #undef MAP_FIELD
+
+    qnx_attr->c_cflag &= ~(Qnx::QIHFLOW | Qnx::QOHFLOW);
+    if (attr.c_cflag & CRTSCTS) {
+        qnx_attr->c_cflag |= Qnx::QIHFLOW | Qnx::QOHFLOW;
     }
+    
     qnx_attr->c_ispeed = attr.c_ispeed;
     qnx_attr->c_ospeed = attr.c_ospeed;
-    //reply.m_state.c_line = attr.c_line;
-    //qnx_attr->c_cflag = attr.c_cflag;
-    //qnx_attr->c_iflag = attr.c_iflag;
-    //qnx_attr->c_lflag = attr.c_lflag;
-    //qnx_attr->c_oflag = attr.c_oflag;
     return Qnx::QEOK;
 }
 
-uint16_t MainHandler::handle_tcsetattr(MsgContext &i, int16_t qnx_fd, const Qnx::termios *termios, int optional_actions) {
+uint16_t MainHandler::handle_tcsetattr(MsgContext &i, int16_t qnx_fd, const Qnx::termios *qnx_attr, int qnx_action) {
     struct termios attr;
-    // TODO: do a real translate
-
-    for(size_t i = 0; i < std::min(NCCS, Qnx::Q_NCCS); i++) {
-        attr.c_cc[i] = termios->c_cc[i];
+    // get attrs for partial update
+    int r = tcgetattr(i.map_fd(qnx_fd), &attr);
+    if (r < 0) {
+        return Emu::map_errno(errno);
     }
-    attr.c_ispeed = termios->c_ispeed;
-    attr.c_ospeed = termios->c_ospeed;
-    //attr.c_line = msg.m_state.m_c;
-    attr.c_cflag = termios->c_cflag;
-    attr.c_iflag = termios->c_iflag;
-    attr.c_lflag = termios->c_lflag;
-    attr.c_oflag = termios->c_oflag;
 
-    int r = tcsetattr(i.map_fd(i.m_fd), optional_actions, &attr);
+    #define MAP(qnx, host) attr.c_cc[Qnx::qnx]  = qnx_attr->c_cc[host];
+    CC_MAP
+    #undef MAP
+
+    #define MAP_FIELD(field, qnx, host) \
+    attr.field &= ~Qnx::qnx; \
+    if (qnx_attr->field & host) attr.field |= Qnx::qnx;
+
+    #define MAP(qnx, host) MAP_FIELD(c_iflag, qnx, host)
+    IFLAG_MAP
+    #undef MAP
+
+    #define MAP(qnx, host) MAP_FIELD(c_oflag, qnx, host)
+    OFLAG_MAP
+    #undef MAP
+
+    #define MAP(qnx, host) MAP_FIELD(c_cflag, qnx, host)
+    CFLAG_MAP
+    #undef MAP
+
+    #define MAP(qnx, host) MAP_FIELD(c_lflag, qnx, host)
+    LFLAG_MAP
+    #undef MAP
+
+    #undef MAP_FIELD
+
+    attr.c_cflag &= ~CRTSCTS;
+    if (qnx_attr->c_cflag & (Qnx::QIHFLOW | Qnx::QOHFLOW)) {
+        attr.c_cflag |= CRTSCTS;
+    }
+
+    attr.c_ispeed = qnx_attr->c_ispeed;
+    attr.c_ospeed = qnx_attr->c_ospeed;
+
+    int actions = 0;
+    if (qnx_action & Qnx::QTCSANOW)
+        actions = TCSANOW;
+    if (qnx_action & Qnx::QTCSADRAIN)
+        actions = TCSADRAIN;
+    if (qnx_action & Qnx::QTCSAFLUSH)
+        actions = TCSAFLUSH;
+
+    r = tcsetattr(i.map_fd(i.m_fd), actions, &attr);
     if (r < 0) {
         return Emu::map_errno(errno);
     } else {

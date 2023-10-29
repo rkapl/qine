@@ -2,7 +2,7 @@
 set -eux
 ninja -C build
 gdb=`which gdb`
-exec env "QNX_ROOT=$QNX_ROOT" "PATH=/bin:/usr/bin" \
+exec env "PATH=/bin:/usr/bin" \
     $gdb \
     -ex 'handle SIGUSR1 nostop' \
     -ex 'handle SIGSEGV noprint' \
