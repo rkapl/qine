@@ -7,5 +7,7 @@ exec env "PATH=/bin:/usr/bin" \
     -ex 'handle SIGUSR1 nostop' \
     -ex 'handle SIGSEGV noprint' \
     -ex 'b Emu::debug_hook_problem' \
-    --args build/qine "$@"
+    --args build/qine \
+    -l $QNX_SLIB \
+    "$@"
 

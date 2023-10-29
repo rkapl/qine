@@ -26,6 +26,7 @@
 #include "qnx_fd.h"
 #include "qnx_pid.h"
 #include "segment_descriptor.h"
+#include "loader.h"
 
 class Segment;
 class MsgContext;
@@ -33,16 +34,6 @@ class MsgContext;
 class CwdTooLong: public std::runtime_error {
 public:
     CwdTooLong(): std::runtime_error("working directory path too long for QNX") {}
-};
-
-struct LoadInfo {
-    LoadInfo(): heap_start(0), stack_low(0), stack_size(0) {}
-    std::optional<FarPointer> entry_main;
-    std::optional<FarPointer> entry_slib;
-    std::optional<SegmentId> data_segment;
-    uint32_t stack_low;
-    uint32_t stack_size;
-    uint32_t heap_start;
 };
 
 /* Represents the currently running process, a singleton */
@@ -53,7 +44,8 @@ class Process{
 public:
     static inline Process* current();
     static Process* create();
-    void initialize(std::vector<std::string>&& self_call);
+    void initialize_self_call(std::vector<std::string>&& self_call);
+
     void update_pids_after_fork(pid_t new_pid);
 
     std::shared_ptr<Segment> allocate_segment();
@@ -73,19 +65,14 @@ public:
     Qnx::pid_t parent_pid() const;
     Qnx::nid_t nid() const;
 
+    void load_library(std::string_view load_arg);
+    void load_executable(const char *host_path);
+    bool slib_loaded() const { return m_slib_entry != 0; }
     const std::vector<std::string>& self_call() const;
-
     const std::string& file_name() const;
 
     void set_errno(int v);
 
-    /* Information modified by loader */
-    /* Only the mcontext will actually be used.*/
-    ucontext_t m_startup_context_main;
-    ExtraContext m_startup_context_extra;
-    GuestContext m_startup_context;
-
-    LoadInfo m_load;
 private:
     NoCopy m_mark_nc;
     NoMove m_mark_nm;
@@ -95,9 +82,18 @@ private:
 
     SegmentDescriptor* descriptor_by_selector(uint16_t id);
     void setup_magic(SegmentDescriptor *data_sd, StartupSbrk& alloc);
+    void initialize();
     void initialize_pids();
 
     static Process* m_current;
+
+    // loader
+    ucontext_t m_startup_context_main;
+    ExtraContext m_startup_context_extra;
+    GuestContext m_startup_context;
+    LoadInfo m_load_exec;
+    LoadInfo m_load_slib;
+    uint32_t m_slib_entry;
 
     // memory
     IntrusiveList::List<Segment> m_segments;

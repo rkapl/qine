@@ -32,8 +32,14 @@ static  void panic(const char* error) {
     throw LoaderFormatException(error);
 }
 
+struct LoadContext {
+    bool m_slib;
+    const lmf_header m_hdr;
+    LoadInfo *m_info;
+};
+
 struct AbstractLoader {
-    AbstractLoader(const lmf_header* hdr, bool slib): m_hdr(hdr), m_slib(slib) {}
+    AbstractLoader(LoadContext *ctx): m_ctx(ctx) {}
 
     virtual void prepare_segments(uint32_t segment_count) = 0;
     virtual void alloc_segment(uint32_t id, Access access, uint32_t size) = 0;
@@ -45,10 +51,7 @@ struct AbstractLoader {
 
     virtual ~AbstractLoader() {}
 
-    const lmf_header *m_hdr;
-    bool m_slib;
-
-    uint32_t m_code_offset = 0;
+    LoadContext *m_ctx;
 };
 
 /* Different from the QNX memory segment. In flat model there is only one QNX segment, but usually two loader segments.
@@ -62,7 +65,7 @@ struct FlatSegment {
 
 /* Note: the shmem.txt describes the layout of flat and segmented executables */
 struct FlatLoader: public AbstractLoader {
-    FlatLoader(const lmf_header* hdr, bool slib): AbstractLoader(hdr, slib) {}
+    FlatLoader(LoadContext *ctx): AbstractLoader(ctx) {}
 
     void prepare_segments(uint32_t segment_count) override;
     void alloc_segment(uint32_t id, Access access, uint32_t size) override;
@@ -81,7 +84,7 @@ struct FlatLoader: public AbstractLoader {
 
 void FlatLoader::prepare_segments(uint32_t segment_count) {
     m_segments.resize(segment_count);
-    m_image_base = MemOps::align_page_up(m_hdr->image_base);
+    m_image_base = MemOps::align_page_up(m_ctx->m_hdr.image_base);
     m_segment_pos = m_image_base;
 }
 
@@ -97,8 +100,9 @@ void FlatLoader::alloc_segment(uint32_t id, Access access, uint32_t size)
 }
 
 void FlatLoader::finalize_segments() {
+    auto hdr = &m_ctx->m_hdr;
     // allocate QNX segment and check layout
-    m_stack = MemOps::align_page_up(m_hdr->stack_nbytes);
+    m_stack = MemOps::align_page_up(hdr->stack_nbytes);
     m_skip = MemOps::PAGE_SIZE;
     if (m_stack + m_skip > m_image_base) {
         panic("stack does not fit");
@@ -116,18 +120,16 @@ void FlatLoader::finalize_segments() {
     m_mem->grow(Access::READ_WRITE, m_stack);
     m_mem->grow(Access::READ_WRITE, m_segment_pos - m_image_base);
     auto heap_start = m_mem->size();
-    m_mem->grow(Access::READ_WRITE, m_hdr->heap_nbytes);
+    m_mem->grow(Access::READ_WRITE, hdr->heap_nbytes);
 
-    auto load = &Process::current()->m_load;
+    auto load = m_ctx->m_info;
     load->stack_low = m_skip;
     load->stack_size = m_stack;
     load->heap_start = heap_start;
-    m_code_offset = m_segments[m_hdr->code_index].start + m_hdr->code_offset;
+    load->entry = m_segments[hdr->code_index].start + hdr->code_offset;
 }
 
 void FlatLoader::finalize_loading() {
-    auto proc = Process::current();
-    auto& ctx = proc->m_startup_context;
     // protect the segments & create selectors
     for (uint32_t si = 0;  si < m_segments.size(); ++si) {
         const auto& seg = m_segments[si];
@@ -153,7 +155,7 @@ struct LoadedSegment {
 };
 
 struct SegmentLoader: public AbstractLoader {
-    SegmentLoader(const lmf_header* hdr, bool slib): AbstractLoader(hdr, slib) {
+    SegmentLoader(LoadContext *ctx): AbstractLoader(ctx) {
     }
     void prepare_segments(uint32_t segment_count) override;
     void alloc_segment(uint32_t id, Access access, uint32_t size) override;
@@ -173,7 +175,7 @@ void SegmentLoader::alloc_segment(uint32_t id, Access access, uint32_t size) {
     auto proc = Process::current();
     auto seg = proc->allocate_segment();
     auto aligned_size = MemOps::align_page_up(size);
-    if (m_slib) {
+    if (m_ctx->m_slib) {
         seg->reserve(MemOps::mega(4));
     } else {
         seg->reserve(MemOps::mega(256));
@@ -185,27 +187,26 @@ void SegmentLoader::alloc_segment(uint32_t id, Access access, uint32_t size) {
 }
 
 void SegmentLoader::finalize_segments() {
-    if (m_hdr->stack_index >= m_segments.size())
+    auto hdr = &m_ctx->m_hdr;
+    if (hdr->stack_index >= m_segments.size())
         throw LoaderFormatException("Stack index specifies invalid index");
 
-    if (m_hdr->heap_index >= m_segments.size())
+    if (hdr->heap_index >= m_segments.size())
         throw LoaderFormatException("Stack index specifies invalid index");
-    auto& ctx = Process::current()->m_startup_context;
 
-    auto stack_seg = m_segments[m_hdr->stack_index].segment.get();
+    auto stack_seg = m_segments[hdr->stack_index].segment.get();
     auto stack_start = stack_seg->size();
-    stack_seg->grow(Access::READ_WRITE, MemOps::align_page_up(m_hdr->stack_nbytes));
+    stack_seg->grow(Access::READ_WRITE, MemOps::align_page_up(hdr->stack_nbytes));
 
-    auto heap_seg = m_segments[m_hdr->heap_index].segment.get();
+    auto heap_seg = m_segments[hdr->heap_index].segment.get();
     auto heap_start = heap_seg->size();
-    heap_seg->grow(Access::READ_WRITE, MemOps::align_page_up(m_hdr->heap_nbytes));
+    heap_seg->grow(Access::READ_WRITE, MemOps::align_page_up(hdr->heap_nbytes));
 
-    if (!m_slib) {
-        auto load = &Process::current()->m_load;
-        load->stack_low = stack_start;
-        load->stack_size = m_hdr->stack_nbytes;
-        load->heap_start = heap_start;
-    }
+    auto load = m_ctx->m_info;
+    load->stack_low = stack_start;
+    load->stack_size = m_ctx->m_hdr.stack_nbytes;
+    load->heap_start = heap_start;
+    load->entry = m_ctx->m_hdr.code_offset;
 }
 
 void * SegmentLoader::prepare_segment_load(const lmf_data& ld, size_t file_offset, size_t data_size) {
@@ -219,12 +220,6 @@ void SegmentLoader::finalize_loading() {
     for(size_t si = 0; si < m_segments.size(); si++) {
         auto &seg = m_segments[si];
         seg.segment->change_access(seg.final_access, 0, seg.segment->size());
-    }
-    m_code_offset = m_hdr->code_offset;
-    if (m_slib) {
-        // The problem is that slib entry is for the "load as executable". 
-        // The real offset is probably passed to some slib registering.
-        m_code_offset = 0x7d0;
     }
 }
 
@@ -261,7 +256,7 @@ static void checked_read(const char* operation, int fd, void *dst, size_t size) 
 // see watcom, https://github.com/open-watcom/open-watcom-v2/blob/893cbe8abcc479e75fe8e1517dd23817b0317ca4/bld/wl/c/loadqnx.c#L95
 // see https://github.com/radareorg/radare2/issues/12664
 
-void load_executable(const char* path, bool slib) {
+void loader_load(const char* path, LoadInfo *info_out, bool slib) {
     Log::print(Log::LOADER, "loading %s\n", path);
     auto fd = UniqueFd(open(path, O_CLOEXEC | O_RDONLY));
     auto proc = Process::current();
@@ -304,10 +299,11 @@ void load_executable(const char* path, bool slib) {
     });
 
     std::unique_ptr<AbstractLoader> loader;
+    LoadContext ctx{slib, hdr.header, info_out};
     if (hdr.header.cflags & _TCF_FLAT) {
-        loader.reset(new FlatLoader(&hdr.header, slib));
+        loader.reset(new FlatLoader(&ctx));
     } else {
-        loader.reset(new SegmentLoader(&hdr.header, slib));
+        loader.reset(new SegmentLoader(&ctx));
     }
 
     // read segments (tail of the header) and do the layout
@@ -327,7 +323,7 @@ void load_executable(const char* path, bool slib) {
 
     loader->finalize_segments();    
     
-    // read individual records and parse the interesting ones
+    // read individual records and parse the interesting ones, loading the data if they are data segments
     lmf_record rec;
     rec.rec_type = LMF_HEADER_REC;
     bool rw_state = true;
@@ -373,31 +369,21 @@ void load_executable(const char* path, bool slib) {
 
     uint16_t cs = 0;
     loader->finalize_loading();
-    auto& ctx = proc->m_startup_context;
     for (uint32_t si = 0; si < segment_count; si++) {
-        /* The selector assignment is bit of a guess. Maybe we should also stash them somewhere else? */
+        /* Now create descriptors for the segments and write the selector information down */
         auto seg = loader->get_segment(si);
         auto sd = proc->create_segment_descriptor(segment_types[si], seg);
         Log::print(Log::LOADER, "segment %d selector: %x (access %d)\n", si, sd->selector(), segment_types[si]);
-        if (hdr.header.code_index == si) {
-            FarPointer entry(sd->selector(), loader->m_code_offset);
-            if (slib) {
-                proc->m_load.entry_slib = entry;
-            } else {
-                proc->m_load.entry_main = entry;
-            }
-        }
-        if (hdr.header.heap_index == si) {
-            ctx.reg_ds() = sd->selector();
-            proc->m_load.data_segment = sd->id();
-        }
-        if (hdr.header.stack_index == si) {
-            ctx.reg_ss() = sd->selector();
-        }
-        if (hdr.header.argv_index == si) {
-            ctx.reg_es() = sd->selector();
-            ctx.reg_fs() = sd->selector();
-            ctx.reg_gs() = sd->selector();
-        }
+
+        if (hdr.header.code_index == si) 
+            info_out->cs = sd->selector();
+        
+        if (hdr.header.heap_index == si)
+            info_out->ds = sd->selector();
+            
+        if (hdr.header.stack_index == si)
+            info_out->ss = sd->selector();
+
+        // Argv index ignore for now. I guess it would be important for some 16-bit executables.
     }
 }

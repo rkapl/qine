@@ -1,3 +1,4 @@
+#include <functional>
 #include <stdlib.h>
 #include <string>
 #include <stdio.h>
@@ -7,7 +8,6 @@
 
 #include "fsutil.h"
 #include "process.h"
-#include "loader.h"
 #include "log.h"
 
 static void handle_log_opt(const char *opt) {
@@ -33,26 +33,42 @@ static void handle_help() {
     printf("qine [options] executable [args]\n");
 }
 
+
+int opt_no_slib;
+
 static struct option cmd_options[] = {
     {"help", no_argument, 0, 'h'},
-    {"debug", no_argument, 0, 'd'},
-    {"map", no_argument, 0, 'm'},
+    {"debug", required_argument, 0, 'd'},
+    {"map", required_argument, 0, 'm'},
+    {"lib", required_argument, 0, 'l'},
+    {"no-slib", no_argument, &opt_no_slib, 1},
 };
+
 
 int main(int argc, char **argv) {
     setvbuf(stdout, nullptr, _IOLBF, 256);
     setvbuf(stderr, nullptr, _IOLBF, 256);
     auto proc = Process::create();
+
+    std::vector<std::function<void()>> delayed_args;
+
     try {
         for (;;) {
-            const char* opts = "d:h:r:m:";
+            const char* opts = "d:h:r:m:s:l:";
             int c = getopt_long(argc, argv, opts, cmd_options, NULL);
+            const char* this_optarg = optarg;
             if (c == -1)
                 break;
             switch(c) {
+                case 0:
+                    // flag set instead
+                    break;
                 case '?':
                     handle_help();
                     exit(1);
+                    break;
+                case 'l':
+                    delayed_args.push_back([proc, this_optarg] {proc->load_library(this_optarg); });
                     break;
                 case 'h':
                     handle_help();
@@ -70,6 +86,15 @@ int main(int argc, char **argv) {
             }
         }
 
+        for (auto d: delayed_args)
+            d();
+
+        if (!proc->slib_loaded() && !opt_no_slib) {
+            fprintf(stderr, "No system specified on commandline using --lib. "
+                "For most executables, this needs to be specified. Use --no-slib to override\n");
+            exit(1);
+        }
+
         std::vector<std::string> self_call;
         for (int i = 0; i < optind; i++) {
             self_call.push_back(argv[i]);
@@ -79,7 +104,7 @@ int main(int argc, char **argv) {
         argc -= optind;
         argv += optind;
 
-        proc->initialize(std::move(self_call));
+        proc->initialize_self_call(std::move(self_call));
     } catch (const ConfigurationError& e) {
         fprintf(stderr, "%s\n", e.m_msg.c_str());
         return 1;
@@ -90,21 +115,11 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    std::string slib_path;
-    if (getenv("QNX_SLIB")) {
-        slib_path = getenv("QNX_SLIB");
-    } else {
-        auto p = PathInfo::mk_qnx_path("/boot/sys/Slib32");
-        proc->path_mapper().map_path_to_host(p);
-        slib_path = p.host_path();
-    }
-    load_executable(slib_path.c_str(), true);
-
     if (Fsutil::is_abs(argv[0])) {
         auto exec_path = proc->path_mapper().map_path_to_host(argv[0]);
-        load_executable(exec_path.host_path(), false);
+        proc->load_executable(exec_path.host_path());
     } else {
-        load_executable(argv[0], false);
+        proc->load_executable(argv[0]);
     }
 
     proc->setup_startup_context(argc, argv);

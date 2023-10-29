@@ -1,5 +1,38 @@
 include common : open;
 
+struct sysmsg_version {
+    name: char[12];
+    date: char[12];
+    version: u16;
+    letter: u8;
+    more: u8;
+}
+
+msg slib_register {
+    type: 1;
+    subtype: 0;
+    request {
+        offset: u32 hex;
+        segment: u16 hex;
+        data: sysmsg_version;
+
+        offset_1: u32 hex;
+        segment_1: u16 hex;
+        offset_2: u32 hex;
+        segment_2: u16 hex;
+        offset_3: u32 hex;
+        segment_3: u16 hex;
+
+        padd: u32;
+        padd: u32;
+    }
+
+    reply {
+        status: u16;
+    }
+}
+
+
 struct spawn {
     type: u16;
     priority: u8;
@@ -78,7 +111,31 @@ struct timer_reply {
     pid: pid;
     arg: timer_args;
 }
- 
+
+struct name_request {
+    type: u16;
+    subtype: u16;
+    cookie: u16;
+    flags: u16;
+    padd: u32;
+    name: char[33];
+}
+
+struct name_reply {
+    status: u16;
+    padd: u16;
+    cookie: u16;
+    pid: pid;
+    nid: nid;
+    name: char[33];
+}
+
+msg name_attach {
+    type: 10;
+    subtype: 0;
+    request name_request;
+    reply name_reply;
+}
 
 msg timer_create {
     type: 11;
@@ -127,7 +184,7 @@ struct segment_request {
     type: u16;
     subtype: u16;
 
-    sel: u16;
+    sel: u16 hex;
     srcpid: pid;
     padd_1: u16;
     dstpid: pid;
@@ -140,7 +197,7 @@ struct segment_request {
 
 struct segment_reply {
     status: u16;
-    sel: u16;
+    sel: u16 hex;
     flags: u16 hex;
     addr: u32 hex;
     nbytes: u32 hex;
@@ -162,6 +219,38 @@ msg segment_realloc {
     reply segment_reply;
 }
 
+msg segment_global {
+    type: 9;
+    subtype: 9;
+
+    request segment_request;
+    reply segment_reply;
+}
+
+msg segment_arm {
+    type: 9;
+    subtype: 11;
+
+    request segment_request;
+    reply segment_reply;
+}
+
+msg segment_put {
+    type: 9;
+    subtype: 13;
+
+    request segment_request;
+    reply segment_reply;
+}
+
+msg segment_priv {
+    type: 9;
+    subtype: 17;
+
+    request segment_request;
+    reply segment_reply;
+}
+
 msg time {
     type: 14;
     request {
@@ -177,6 +266,22 @@ msg time {
     }
 }
 
+msg proc_flags {
+    type: 15;
+
+    request {
+        padd: u16;
+        mask: u32;
+        bits: u32;
+    }
+
+    reply {
+        status: u16;
+        padd: u16;
+        old_bits: u16;
+        new_bits: u16;
+    }
+}
 
 msg terminate {
     type: 24;

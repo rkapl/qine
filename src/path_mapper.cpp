@@ -4,6 +4,7 @@
 #include "path_mapper.h"
 #include "types.h"
 #include "fsutil.h"
+#include "cmd_opts.h"
 
 static void pop_path(std::string& dst) {
     while (dst.back() != '/' && !dst.empty()) {
@@ -96,16 +97,15 @@ PathInfo PathInfo::mk_host_path(const char *path, bool normalized) {
 }
 
 void PathMapper::add_map(const char *map_cmd_arg) {
-    std::string arg(map_cmd_arg);
     Prefix i;
+    CommandOptions::parse(map_cmd_arg, {
+        .core = {
+            new CommandOptions::String(&i.m_qnx_path),
+            new CommandOptions::String(&i.m_host_path),
+        }
+    });
 
-    const char* separator = strchr(map_cmd_arg, ':');
-    if (!separator) {
-        throw ConfigurationError("map option expects source:target argument");
-    }
-    i.m_qnx_path.append(map_cmd_arg, separator - map_cmd_arg);
     i.m_qnx_path = normalize_path(i.m_qnx_path.c_str());
-    i.m_host_path.append(separator + 1);
     i.m_host_path = normalize_path(i.m_host_path.c_str());
 
     if (i.m_qnx_path == "/") {

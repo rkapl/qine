@@ -14,6 +14,7 @@ list(TRANSFORM MSG_GEN_PART APPEND ".cpp" OUTPUT_VARIABLE MSG_SRC)
 list(TRANSFORM MSG_GEN_PART APPEND ".h"  OUTPUT_VARIABLE MSG_H)
 
 add_executable(qine
+  src/cmd_opts.h src/cmd_opts.cpp
   src/cpp.h
   src/compiler.h
   src/intrusive_list.h

@@ -17,6 +17,7 @@ c_test = Path(__file__).parent
 os.chdir(c_test)
 
 qnx = Path(os.environ['QNX_ROOT'])
+slib_spec = os.environ['QNX_SLIB']
 watcom = qnx / 'usr/watcom/10.6'
 qine = c_test / '../build/qine'
 build = c_test / 'build'
@@ -43,7 +44,7 @@ def run_test(test, single=False):
     test_dir = build / test
     test_dir.mkdir(exist_ok=True)
     os.chdir(test_dir)
-    qine_cmd = [qine , '--']
+    qine_cmd = [qine, '--lib', slib_spec , '--']
 
     print(f'----- TEST {test} ------')
 
@@ -56,6 +57,7 @@ def run_test(test, single=False):
     exec(qine_cmd + [watcom / 'bin/wcc386', f'../../common.c'] + includes)
     exec(qine_cmd + [watcom / 'bin/wlink', 
         'FORM', 'qnx', 'flat', 'NAME', test, 'OP', 'q', 'FILE', f'{test}.o', 'FILE', f'common.o',
+        'LIB', 'unix3r',
         'LIBP', ':'.join([
             str(watcom / 'include'),
             str(qnx / 'usr/lib')
@@ -67,7 +69,7 @@ def run_test(test, single=False):
         extra_args.extend(['-d', a])
 
     failures = []
-    run_args = [qine] + extra_args + ['--', f'./{test}']
+    run_args = [qine, '-l', slib_spec] + extra_args + ['--', f'./{test}']
     print_args(run_args)
     proc = subprocess.Popen(run_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding='ascii')
     with open('run.log', 'wt') as f:

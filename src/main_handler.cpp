@@ -69,7 +69,10 @@ void MainHandler::receive_inner(MsgContext& i) {
     };
 
     switch (hdr.type) {
-        case QnxMsg::proc::msg_segment_realloc::TYPE :
+        case QnxMsg::proc::msg_slib_register::TYPE:
+            proc_slib_register(i);
+        break;
+        case QnxMsg::proc::msg_segment_realloc::TYPE:
             switch (hdr.subtype) {
                 case QnxMsg::proc::msg_segment_realloc::SUBTYPE:
                     proc_segment_realloc(i);
@@ -77,11 +80,29 @@ void MainHandler::receive_inner(MsgContext& i) {
                 case QnxMsg::proc::msg_segment_alloc::SUBTYPE:
                     proc_segment_alloc(i);
                 break;
+                case QnxMsg::proc::msg_segment_put::SUBTYPE:
+                    proc_segment_put(i);
+                    break;
+                case QnxMsg::proc::msg_segment_arm::SUBTYPE:
+                    proc_segment_arm(i);
+                    break;
+                case QnxMsg::proc::msg_segment_priv::SUBTYPE:
+                    proc_segment_priv(i);
+                    break;
                 default:
                     unhandled_msg();
                 break;
             }
             break;
+        case QnxMsg::proc::msg_name_attach::TYPE:
+            switch (hdr.subtype) {
+                case QnxMsg::proc::msg_name_attach::SUBTYPE:
+                    proc_name_attach(i);
+                break;
+                default:
+                    unhandled_msg();
+                break;
+            }; break;
         case QnxMsg::proc::msg_time::TYPE:
             proc_time(i);
             break;
@@ -315,6 +336,7 @@ void MainHandler::receive_inner(MsgContext& i) {
     }
 }
 
+
 void MainHandler::proc_terminate(MsgContext& i)
 {
     QnxMsg::proc::terminate_request msg;
@@ -437,6 +459,17 @@ void MainHandler::proc_fd_action1(MsgContext &i) {
     i.msg().write_status(Qnx::QEOK);
 }
 
+void MainHandler::proc_slib_register(MsgContext &i) {
+    QnxMsg::proc::slib_register_request msg;
+    i.msg().read_type(&msg);
+
+    fprintf(stderr, "Registering shared library %s, offset %x\n", msg.m_data.m_name, msg.m_offset);
+    fprintf(stderr, "You can load the library for your program using:\n  --lib %s,sys,entry=0x%x\n",
+        i.proc().m_file_name.c_str(), msg.m_offset);
+
+    i.msg().write_status(Qnx::QEOK);
+}
+
 void MainHandler::proc_segment_alloc(MsgContext& i)
 {
     QnxMsg::proc::segment_request msg;
@@ -484,6 +517,34 @@ void MainHandler::proc_segment_realloc(MsgContext& i)
         reply.m_addr = reinterpret_cast<uint32_t>(seg->location()); 
         //printf("New segment size: %x\n", seg->size());
     }
+    i.msg().write_type(0, &reply);
+}
+
+void MainHandler::proc_segment_arm(MsgContext& i) {
+    // mark segment as global, called during Slib startup
+    i.msg().write_status(Qnx::QEOK);
+}
+
+void MainHandler::proc_segment_put(MsgContext& i) {
+    // mark segment as global, called during Slib startup
+    i.msg().write_status(Qnx::QEOK);
+}
+
+void MainHandler::proc_segment_priv(MsgContext& i) {
+    // mark segment as global, called during Slib startup
+    i.msg().write_status(Qnx::QEOK);
+}
+
+void MainHandler::proc_name_attach(MsgContext &i) {
+    QnxMsg::proc::name_request msg;
+    i.msg().read_type(&msg);
+
+    // Currently used by Slib when registering its shared library
+    fprintf(stderr, "Attaching name %s\n", msg.m_name);
+
+    QnxMsg::proc::name_reply reply;
+    reply.m_cookie = 1;
+    clear(&reply);
     i.msg().write_type(0, &reply);
 }
 
@@ -618,7 +679,11 @@ void MainHandler::proc_getid(MsgContext &i) {
     //msg.m_status = Qnx::QEOK;
     msg.m_pid = proc->pid();
     msg.m_ppid = proc->parent_pid();
-    msg.m_pid_group = proc->pid();
+    msg.m_pid_group = QnxPid::PID_UNKNOWN;
+    auto pid = i.proc().pids().host(getpgrp());
+    if (pid)
+        msg.m_pid_group = pid->qnx_pid();
+
     msg.m_rgid = getgid();
     msg.m_egid = getegid();
     msg.m_ruid = getuid();

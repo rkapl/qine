@@ -229,11 +229,11 @@ qine_no_tls void Emu::signal_tail(GuestContext& ctx) {
     ctx.push_stack(qnx_sig);
     ctx.push_stack(act->handler_fn);
 
-    ctx.reg_cs() = proc->m_load.entry_main->m_segment;
+    ctx.reg_cs() = proc->m_load_exec.cs;
     ctx.reg_eip() = proc->m_sigtab->sigstub;
     Log::print(Log::SIG, "Emulating QNX signal %d, handler %x:%x, via stub %x, @esp %x, new mask %x, pending %x\n", 
         qnx_sig,
-        proc->m_load.entry_main->m_segment, act->handler_fn, proc->m_sigtab->sigstub, 
+        proc->m_load_exec.cs, act->handler_fn, proc->m_sigtab->sigstub, 
         old_esp,
         m_sigmask.m_value, m_sigpend.m_value);
     ctx.m_ectx->to_cpu();
@@ -252,6 +252,10 @@ void Emu::syscall_sigreturn(GuestContext &ctx)
     );
 }
 
+void Emu::syscall_priority(GuestContext &ctx) {
+    // ignore
+    ctx.set_syscall_ok();
+}
 
 void Emu::dispatch_syscall(GuestContext& ctx)
 {
@@ -266,6 +270,9 @@ void Emu::dispatch_syscall(GuestContext& ctx)
                 break;
             case 7:
                 syscall_sigreturn(ctx);
+                break;
+            case 8:
+                syscall_priority(ctx);;
                 break;
             case 11:
                 syscall_sendfdmx(ctx);

@@ -10,6 +10,7 @@
 #include "gen_msg/fsys.h"
 #include "gen_msg/io.h"
 #include "gen_msg/proc.h"
+#include "loader.h"
 #include "msg/meta.h"
 #include "msg/dump.h"
 #include "qnx/magic.h"
@@ -28,6 +29,7 @@
 #include "log.h"
 #include "util.h"
 #include "fsutil.h"
+#include "cmd_opts.h"
 
 Process* Process::m_current = nullptr;
 
@@ -35,7 +37,8 @@ Process::Process():
     m_segment_descriptors(1024),
     m_sigtab(nullptr),
     m_fds(),
-    m_magic_guest_pointer(FarPointer::null())
+    m_magic_guest_pointer(FarPointer::null()),
+    m_slib_entry(0)
 {
 }
 
@@ -44,17 +47,11 @@ Process::~Process() {}
 Process* Process::create() {
     assert(!m_current);
     m_current = new Process();
+    m_current->initialize();
     return m_current;
 }
 
-void Process::initialize(std::vector<std::string>&& self_call) {
-    m_self_call = std::move(self_call);
-    m_file_name.resize(Qnx::QPATH_MAX_T);
-    if (!realpath(m_self_call[0].c_str(), m_file_name.data())) {
-        throw std::system_error(errno, std::system_category());
-    }
-    m_file_name.resize(strlen(m_file_name.data()));
-
+void Process::initialize() {
     m_startup_context = GuestContext(&m_startup_context_main, &m_startup_context_extra);
     memset(&m_startup_context_main, 0xcc, sizeof(m_startup_context_main));
     memset(&m_startup_context_extra, 0xcc, sizeof(m_startup_context_extra));
@@ -62,6 +59,15 @@ void Process::initialize(std::vector<std::string>&& self_call) {
     m_fds.scan_host_fds(m_current->nid(), 1, 1);
 
     initialize_pids();
+}
+
+void Process::initialize_self_call(std::vector<std::string>&& self_call) {
+    m_self_call = std::move(self_call);
+    m_file_name.resize(Qnx::QPATH_MAX_T);
+    if (!realpath(m_self_call[0].c_str(), m_file_name.data())) {
+        throw std::system_error(errno, std::system_category());
+    }
+    m_file_name.resize(strlen(m_file_name.data()));
 }
 
 void Process::initialize_pids() {
@@ -79,6 +85,38 @@ void Process::initialize_pids() {
 
     m_pids.alloc_related_pid(getsid(self), QnxPid::Type::SID);
     m_pids.alloc_related_pid(getpgid(self), QnxPid::Type::PGID);
+}
+
+void Process::load_library(std::string_view load_arg) {
+    std::string lib;
+    uint32_t entry;
+    namespace CO = CommandOptions;
+    bool slib = false;
+    CO::parse(load_arg, {
+        .core = {
+            new CO::String(&lib)
+        },
+        .kwargs = {
+            new CO::KwArg<CO::Integer<uint32_t>>("entry", &entry),
+            new CO::KwArg<CO::Flag>("sys", &slib),
+        }
+    });
+
+    if (slib && entry == 0) {
+        throw ConfigurationError("Entry point must be specified for slib");
+    }
+
+    LoadInfo li;
+    loader_load(lib.c_str(), &li, true);
+
+    if (slib) {
+        m_slib_entry = entry;
+        m_load_slib = li;
+    }
+}
+
+void Process::load_executable(const char *path) {
+    loader_load(path, &m_load_exec, false);
 }
 
 void Process::update_pids_after_fork(pid_t new_pid) {
@@ -256,20 +294,26 @@ void Process::handle_msg(MsgContext& m)
 void Process::setup_startup_context(int argc, char **argv)
 {
     auto& ctx = m_startup_context;
-    if (!m_load.entry_main.has_value() || ! m_load.entry_slib.has_value() || !m_load.data_segment.has_value()) {
+    if (m_load_exec.entry == 0 || m_load_exec.cs == 0 || m_load_exec.ds == 0) {
         throw GuestStateException("Loading incomplete");
     }
 
-    ctx.reg_esp() = m_load.stack_low + m_load.stack_size - 4;
-    ctx.reg_edx() = m_load.stack_low;
+    ctx.reg_ss() = m_load_exec.ss;
+    ctx.reg_cs() = m_load_exec.cs;
+    ctx.reg_ds() = m_load_exec.ds;
+    ctx.reg_es() = m_load_exec.ds;
+    ctx.reg_fs() = m_load_exec.ds;
 
-    auto data_sd = m_segment_descriptors[m_load.data_segment.value()];
+    ctx.reg_esp() = m_load_exec.stack_low + m_load_exec.stack_size - 4;
+    ctx.reg_edx() = m_load_exec.stack_low;
+
+    auto data_sd = descriptor_by_selector(m_load_exec.ss);
     if (!data_sd) {
         throw GuestStateException("Guest does not seem to be loaded properly (no data segment)");
     }
 
     auto data_seg = data_sd->segment();
-    auto alloc = StartupSbrk(data_seg.get(), m_load.heap_start);
+    auto alloc = StartupSbrk(data_seg.get(), m_load_exec.heap_start);
     setup_magic(data_sd, alloc);
 
     /* Create time segment so that we do not crash, but we do not fill the time yet */
@@ -339,16 +383,19 @@ void Process::setup_startup_context(int argc, char **argv)
     ctx.push_stack(argc);
 
     /* Entry points*/
-    auto main_entry = m_load.entry_main.value();
-    ctx.push_stack(main_entry.m_segment);
-    ctx.push_stack(main_entry.m_offset);
-
-    auto slib_entry = m_load.entry_slib.value();
-    ctx.reg_cs() = slib_entry.m_segment;
-    ctx.reg_eip() = slib_entry.m_offset;
-
-    Log::print(Log::LOADER, "Real start: %x:%x\n", slib_entry.m_segment, slib_entry.m_offset);
-    Log::print(Log::LOADER, "Program start: %x:%x\n", main_entry.m_segment, main_entry.m_offset);
+    if (!slib_loaded()) {
+        ctx.reg_cs() = m_load_exec.cs;
+        ctx.reg_eip() = m_load_exec.entry;
+        Log::print(Log::LOADER, "Program start: %x:%x\n", m_load_exec.cs, m_load_exec.entry);
+    } else {
+        ctx.reg_cs() = m_load_slib.cs;
+        ctx.reg_eip() = m_slib_entry;
+        auto e = &m_load_exec.entry;
+        ctx.push_stack(m_load_exec.cs);
+        ctx.push_stack(m_load_exec.entry);
+        Log::print(Log::LOADER, "Slib start: %x:%x\n", m_load_slib.cs, m_slib_entry);
+        Log::print(Log::LOADER, "Program start: %x:%x\n", m_load_exec.cs, m_load_exec.entry);
+    }
 
     data_sd->update_descriptors();
 
@@ -359,8 +406,8 @@ void Process::setup_startup_context(int argc, char **argv)
 
     Log::if_enabled(Log::LOADER, [&](FILE *s) {
         fprintf(s, "Stack %x:%x - %x, esp %x, aux data %x:%x, heap: %x:%x, free_heap: %x\n",
-             ctx.reg_ss(), m_load.stack_low, m_load.stack_low + m_load.stack_size, ctx.reg_esp(),
-             ctx.reg_ds(), m_load.heap_start,
+             ctx.reg_ss(), m_load_exec.stack_low, m_load_exec.stack_low + m_load_exec.stack_size, ctx.reg_esp(),
+             ctx.reg_ds(), m_load_exec.heap_start,
              ctx.reg_ds(), ctx.reg_ebx(), ctx.reg_ecx()
         );
     });

@@ -29,8 +29,13 @@ private:
 
     void receive_inner(MsgContext &i);
 
+    void proc_slib_register(MsgContext &i);
     void proc_segment_realloc(MsgContext &i);
     void proc_segment_alloc(MsgContext &i);
+    void proc_segment_put(MsgContext &i);
+    void proc_segment_arm(MsgContext &i);
+    void proc_segment_priv(MsgContext &i);
+    void proc_name_attach(MsgContext &i);
     void proc_time(MsgContext &i);
     void proc_setpgid(MsgContext &i);
     void proc_open(MsgContext &i);

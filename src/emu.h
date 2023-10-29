@@ -40,6 +40,7 @@ private:
     void syscall_kill(GuestContext& ctx);
     void syscall_sigreturn(GuestContext& ctx);
     void syscall_receivmx(GuestContext& ctx);
+    void syscall_priority(GuestContext& ctx);
 
     void handler_segv(int sig, siginfo_t *info, void *uctx);
     void handle_guest_segv(GuestContext &ctx, siginfo_t *info);
