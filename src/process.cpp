@@ -156,7 +156,7 @@ void Process::set_errno(int v) {
     m_magic->Errno = v;
 }
 
-void Process::setup_magic(SegmentDescriptor *data_sd, SegmentAllocator& alloc)
+void Process::setup_magic(SegmentDescriptor *data_sd, StartupSbrk& alloc)
 {
      /* Allocate place for the magic */
     alloc.alloc(sizeof(Qnx::Magic));
@@ -260,14 +260,16 @@ void Process::setup_startup_context(int argc, char **argv)
         throw GuestStateException("Loading incomplete");
     }
 
-    /* First allocate some space in data segment */
+    ctx.reg_esp() = m_load.stack_low + m_load.stack_size - 4;
+    ctx.reg_edx() = m_load.stack_low;
+
     auto data_sd = m_segment_descriptors[m_load.data_segment.value()];
     if (!data_sd) {
         throw GuestStateException("Guest does not seem to be loaded properly (no data segment)");
     }
 
     auto data_seg = data_sd->segment();
-    auto alloc = SegmentAllocator(data_seg.get());
+    auto alloc = StartupSbrk(data_seg.get(), m_load.heap_start);
     setup_magic(data_sd, alloc);
 
     /* Create time segment so that we do not crash, but we do not fill the time yet */
@@ -350,10 +352,18 @@ void Process::setup_startup_context(int argc, char **argv)
 
     data_sd->update_descriptors();
 
-    /* What we have allocated */
-    ctx.reg_ebx() = data_seg->size();
-    /* No, there is nothing free, allocate your own :) */
-    ctx.reg_ecx() = 0;
+    /* What we have allocated (curbrk)*/
+    ctx.reg_ebx() = alloc.next_offset();
+    /* What remains free */    
+    ctx.reg_ecx() = data_seg->size() - alloc.next_offset();
+
+    Log::if_enabled(Log::LOADER, [&](FILE *s) {
+        fprintf(s, "Stack %x:%x - %x, esp %x, aux data %x:%x, heap: %x:%x, free_heap: %x\n",
+             ctx.reg_ss(), m_load.stack_low, m_load.stack_low + m_load.stack_size, ctx.reg_esp(),
+             ctx.reg_ds(), m_load.heap_start,
+             ctx.reg_ds(), ctx.reg_ebx(), ctx.reg_ecx()
+        );
+    });
 
     // ctx.dump(stdout);
 

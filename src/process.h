@@ -36,9 +36,13 @@ public:
 };
 
 struct LoadInfo {
+    LoadInfo(): heap_start(0), stack_low(0), stack_size(0) {}
     std::optional<FarPointer> entry_main;
     std::optional<FarPointer> entry_slib;
     std::optional<SegmentId> data_segment;
+    uint32_t stack_low;
+    uint32_t stack_size;
+    uint32_t heap_start;
 };
 
 /* Represents the currently running process, a singleton */
@@ -90,7 +94,7 @@ private:
     ~Process();
 
     SegmentDescriptor* descriptor_by_selector(uint16_t id);
-    void setup_magic(SegmentDescriptor *data_sd, SegmentAllocator& alloc);
+    void setup_magic(SegmentDescriptor *data_sd, StartupSbrk& alloc);
     void initialize_pids();
 
     static Process* m_current;

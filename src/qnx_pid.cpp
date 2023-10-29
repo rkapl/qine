@@ -104,6 +104,14 @@ QnxPid *PidMap::qnx(Qnx::mpid_t pid) {
     return &pi->second;
 }
 
+QnxPid *PidMap::qnx_valid_host(Qnx::mpid_t pid) {
+    auto pi = qnx(pid);
+    if (pi->host_pid() == -1) {
+        return nullptr;
+    }
+    return pi;
+}
+
 QnxPid *PidMap::host(int pid) {
     auto pi = m_reverse_map.find(pid);
     if (pi == m_reverse_map.end())

@@ -71,26 +71,26 @@ int Segment::map_prot(Access access)
     return prot;
 }
 
-void Segment::grow(Access access, size_t new_size)
+void Segment::grow(Access access, size_t size)
 {
-    assert(MemOps::is_page_aligned(new_size));
+    assert(MemOps::is_page_aligned(size));
 
-    if (new_size + m_paged_size > m_reserved) {
+    if (size + m_paged_size > m_reserved) {
         throw std::bad_alloc();
     }
 
     int prot = map_prot(access);
     void *start = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(m_location) + m_paged_size);
-    void *l = mmap(start, new_size, prot, MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0);
+    void *l = mmap(start, size, prot, MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0);
     if (m_location == MAP_FAILED) {
         throw std::bad_alloc();
     }
 
-    for (size_t i = 0; i < new_size / MemOps::PAGE_SIZE; i++) {
+    for (size_t i = 0; i < size / MemOps::PAGE_SIZE; i++) {
         m_bitmap.push_back(true);
     }
 
-    m_paged_size += new_size;
+    m_paged_size += size;
 }
 
 void Segment::skip(size_t new_size)
@@ -157,27 +157,27 @@ Segment::~Segment() {
     }
 }
 
-SegmentAllocator::SegmentAllocator(Segment *seg): 
+StartupSbrk::StartupSbrk(Segment *seg, uint32_t offset): 
     m_segment(seg), 
-    m_offset(seg->paged_size()), 
+    m_offset(offset), 
     m_last_offset(UINT32_MAX)
 {
 }
 
-SegmentAllocator::~SegmentAllocator() {
+StartupSbrk::~StartupSbrk() {
 }
 
-void SegmentAllocator::alloc(uint32_t size)
+void StartupSbrk::alloc(uint32_t size)
 {
     m_last_offset = m_offset;
-    m_offset += size;
+    m_offset += MemOps::align_up(size, 8);
     uint32_t needed = MemOps::align_page_up(m_offset);
     if (needed > m_segment->paged_size()) {
         m_segment->grow(Access::READ_WRITE, needed - m_segment->paged_size());
     }
 }
 
-void SegmentAllocator::push_string(const char *str)
+void StartupSbrk::push_string(const char *str)
 {
     auto len = strlen(str) + 1;
     alloc(len);
@@ -185,10 +185,15 @@ void SegmentAllocator::push_string(const char *str)
 }
 
 // Info for manipulating the last allocated chunk
-uint32_t SegmentAllocator::offset() const {
+uint32_t StartupSbrk::offset() const {
     return m_last_offset;
 }
-void * SegmentAllocator::ptr() const {
+
+uint32_t StartupSbrk::next_offset() const {
+    return m_offset;
+}
+
+void * StartupSbrk::ptr() const {
     return m_segment->pointer(offset(), 0);
 }
 

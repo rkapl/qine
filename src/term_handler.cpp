@@ -209,7 +209,7 @@ uint16_t MainHandler::handle_tcsetattr(MsgContext &i, int16_t qnx_fd, const Qnx:
 
 uint16_t MainHandler::handle_tcsetpgrp(MsgContext &i, int16_t qnx_fd, int16_t qnx_pgrp) {
     int host_fd = i.map_fd(qnx_fd);
-    auto pgrp_pid = i.proc().pids().qnx(qnx_pgrp);
+    auto pgrp_pid = i.proc().pids().qnx_valid_host(qnx_pgrp);
 
     if (!pgrp_pid) {
         return Qnx::QEINVAL;

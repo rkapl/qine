@@ -62,6 +62,8 @@ public:
     QnxPid* alloc_child_pid(int host_pid);
 
     QnxPid *qnx(Qnx::mpid_t pid);
+    // Checks that the host PID is valid
+    QnxPid *qnx_valid_host(Qnx::mpid_t pid);
     QnxPid *host(int pid);
     void free_pid(QnxPid *pid);
 private:

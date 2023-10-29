@@ -346,12 +346,6 @@ void Emu::syscall_sendmx(GuestContext &ctx)
 
 void Emu::syscall_kill(GuestContext &ctx)
 {
-    int32_t pid = ctx.reg_edx();
-    if (pid < 0) {
-        Log::print(Log::UNHANDLED, "signal negative pid. process group?\n");
-        ctx.set_syscall_error(Qnx::QEINVAL);
-        return;
-    }
     int qnx_signo = ctx.reg_ebx();
     int host_signo = QnxSigset::map_sig_qnx_to_host(qnx_signo);
     if (host_signo == -1) {
@@ -360,18 +354,32 @@ void Emu::syscall_kill(GuestContext &ctx)
         return;
     }
 
-    auto pid_info = ctx.proc()->pids().qnx(pid);
-    if (!pid_info) {
-        ctx.set_syscall_error(Qnx::QESRCH);
-        return;
-    } else {
-        Log::print(Log::SIG ,"syscall_kill host pid %d, signo %d\n", pid_info->host_pid(), qnx_signo);
-        int r = kill(pid_info->host_pid(), host_signo);
-        if (r < 0) {
-            ctx.set_syscall_error(map_errno(errno));
-        } else {
-            ctx.set_syscall_ok();
+    int32_t qnx_code = ctx.reg_edx();
+    int host_code;
+    if (qnx_code == 0 || qnx_code == -1) {
+        host_code = qnx_code;
+    } else if (qnx_code > 0) {
+        auto pid_info = ctx.proc()->pids().qnx_valid_host(qnx_code);
+        if (!pid_info) {
+            ctx.set_syscall_error(Qnx::QESRCH);
+            return;
         }
+        host_code = pid_info->host_pid();
+    } else if (qnx_code < -1) {
+        auto pid_info = ctx.proc()->pids().qnx_valid_host(-qnx_code);
+        if (!pid_info) {
+            ctx.set_syscall_error(Qnx::QESRCH);
+            return;
+        }
+        host_code = - pid_info->host_pid();
+    }
+
+    Log::print(Log::SIG ,"syscall_kill host pid %d, signo %d\n", host_code, qnx_signo);
+    int r = kill(host_code, host_signo);
+    if (r < 0) {
+        ctx.set_syscall_error(map_errno(errno));
+    } else {
+        ctx.set_syscall_ok();
     }
 }
 

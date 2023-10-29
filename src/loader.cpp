@@ -39,7 +39,7 @@ struct AbstractLoader {
     virtual void alloc_segment(uint32_t id, Access access, uint32_t size) = 0;
     virtual void finalize_segments() = 0;
 
-    virtual void* get_load_addr(const lmf_data& ld, size_t data_size) = 0;
+    virtual void* prepare_segment_load(const lmf_data& ld, size_t file_offset, size_t data_size) = 0;
     virtual void finalize_loading() = 0;
     virtual std::shared_ptr<Segment> get_segment(uint32_t segment) = 0;
 
@@ -60,13 +60,14 @@ struct FlatSegment {
     Access type;
 };
 
+/* Note: the shmem.txt describes the layout of flat and segmented executables */
 struct FlatLoader: public AbstractLoader {
     FlatLoader(const lmf_header* hdr, bool slib): AbstractLoader(hdr, slib) {}
 
     void prepare_segments(uint32_t segment_count) override;
     void alloc_segment(uint32_t id, Access access, uint32_t size) override;
     void finalize_segments() override;
-    void *get_load_addr(const lmf_data& ld, size_t data_size) override;
+    void *prepare_segment_load(const lmf_data& ld, size_t file_offset, size_t data_size) override;
     void finalize_loading() override;
     std::shared_ptr<Segment> get_segment(uint32_t segment) override;
 
@@ -92,7 +93,7 @@ void FlatLoader::alloc_segment(uint32_t id, Access access, uint32_t size)
     seg.size = MemOps::align_page_up(size);
     m_segment_pos += MemOps::align_page_up(size);
 
-    Log::print(Log::LOADER, "Segment %d: size=%x, type=%x, linear=%x\n", id, size, access, seg.start);
+    Log::print(Log::LOADER, "segment %d: size=%x, type=%x, linear=%x\n", id, size, access, seg.start);
 }
 
 void FlatLoader::finalize_segments() {
@@ -109,12 +110,19 @@ void FlatLoader::finalize_segments() {
     m_mem = Process::current()->allocate_segment();
     m_mem->reserve(MemOps::mega(256));
 
-    // Zero page(s) before stack
+    // Guard page(s) before stack
     m_mem->skip(m_skip);
     // Stack, data and heap (later)
     m_mem->grow(Access::READ_WRITE, m_stack);
     m_mem->grow(Access::READ_WRITE, m_segment_pos - m_image_base);
+    auto heap_start = m_mem->size();
     m_mem->grow(Access::READ_WRITE, m_hdr->heap_nbytes);
+
+    auto load = &Process::current()->m_load;
+    load->stack_low = m_skip;
+    load->stack_size = m_stack;
+    load->heap_start = heap_start;
+    m_code_offset = m_segments[m_hdr->code_index].start + m_hdr->code_offset;
 }
 
 void FlatLoader::finalize_loading() {
@@ -125,16 +133,13 @@ void FlatLoader::finalize_loading() {
         const auto& seg = m_segments[si];
         m_mem->change_access(seg.type, seg.start, seg.size);
     }
-
-    ctx.reg_esp() = m_skip + m_stack;
-    m_code_offset = m_segments[m_hdr->code_index].start + m_hdr->code_offset;
 }
 
 std::shared_ptr<Segment> FlatLoader::get_segment(uint32_t segment) {
     return m_mem;
 }
 
-void* FlatLoader::get_load_addr(const lmf_data& ld, size_t data_size) {
+void* FlatLoader::prepare_segment_load(const lmf_data& ld, size_t file_offset, size_t data_size) {
     if (ld.segment >= m_segments.size())
         panic("data: invalid segment");
 
@@ -149,15 +154,11 @@ struct LoadedSegment {
 
 struct SegmentLoader: public AbstractLoader {
     SegmentLoader(const lmf_header* hdr, bool slib): AbstractLoader(hdr, slib) {
-        if (!slib) {
-            // we are missing e.g. stack allocation
-            panic("segmented files are only supported for slib\n");
-        }
     }
     void prepare_segments(uint32_t segment_count) override;
     void alloc_segment(uint32_t id, Access access, uint32_t size) override;
     void finalize_segments() override;
-    void *get_load_addr(const lmf_data& ld, size_t data_size) override;
+    void *prepare_segment_load(const lmf_data& ld, size_t file_offset, size_t data_size) override;
     void finalize_loading() override;
     std::shared_ptr<Segment> get_segment(uint32_t segment) override;
 
@@ -172,18 +173,42 @@ void SegmentLoader::alloc_segment(uint32_t id, Access access, uint32_t size) {
     auto proc = Process::current();
     auto seg = proc->allocate_segment();
     auto aligned_size = MemOps::align_page_up(size);
-    seg->reserve(aligned_size);
+    if (m_slib) {
+        seg->reserve(MemOps::mega(4));
+    } else {
+        seg->reserve(MemOps::mega(256));
+    }
     seg->grow(Access::READ_WRITE, aligned_size);
     m_segments[id].segment = seg;
     m_segments[id].final_access = access;
-    Log::print(Log::LOADER, "Segment %d: size=%x, type=%x, linear=%x\n", id, size, access, seg->location());
+    Log::print(Log::LOADER, "segment %d: size=%x, type=%x, linear=%x\n", id, size, access, seg->location());
 }
 
 void SegmentLoader::finalize_segments() {
-    // Nothing to do here
+    if (m_hdr->stack_index >= m_segments.size())
+        throw LoaderFormatException("Stack index specifies invalid index");
+
+    if (m_hdr->heap_index >= m_segments.size())
+        throw LoaderFormatException("Stack index specifies invalid index");
+    auto& ctx = Process::current()->m_startup_context;
+
+    auto stack_seg = m_segments[m_hdr->stack_index].segment.get();
+    auto stack_start = stack_seg->size();
+    stack_seg->grow(Access::READ_WRITE, MemOps::align_page_up(m_hdr->stack_nbytes));
+
+    auto heap_seg = m_segments[m_hdr->heap_index].segment.get();
+    auto heap_start = heap_seg->size();
+    heap_seg->grow(Access::READ_WRITE, MemOps::align_page_up(m_hdr->heap_nbytes));
+
+    if (!m_slib) {
+        auto load = &Process::current()->m_load;
+        load->stack_low = stack_start;
+        load->stack_size = m_hdr->stack_nbytes;
+        load->heap_start = heap_start;
+    }
 }
 
-void * SegmentLoader::get_load_addr(const lmf_data& ld, size_t data_size) {
+void * SegmentLoader::prepare_segment_load(const lmf_data& ld, size_t file_offset, size_t data_size) {
     if (ld.segment >= m_segments.size())
         panic("data: invalid segment");
 
@@ -196,8 +221,11 @@ void SegmentLoader::finalize_loading() {
         seg.segment->change_access(seg.final_access, 0, seg.segment->size());
     }
     m_code_offset = m_hdr->code_offset;
-    // Above does not work for slib, why?
-    m_code_offset = 0x7d0;
+    if (m_slib) {
+        // The problem is that slib entry is for the "load as executable". 
+        // The real offset is probably passed to some slib registering.
+        m_code_offset = 0x7d0;
+    }
 }
 
 std::shared_ptr<Segment> SegmentLoader::get_segment(uint32_t seg)
@@ -234,7 +262,7 @@ static void checked_read(const char* operation, int fd, void *dst, size_t size) 
 // see https://github.com/radareorg/radare2/issues/12664
 
 void load_executable(const char* path, bool slib) {
-    Log::print(Log::LOADER, "Loading %s\n", path);
+    Log::print(Log::LOADER, "loading %s\n", path);
     auto fd = UniqueFd(open(path, O_CLOEXEC | O_RDONLY));
     auto proc = Process::current();
 
@@ -265,6 +293,15 @@ void load_executable(const char* path, bool slib) {
     if (segment_count % sizeof(uint32_t) != 0) {
         panic("loader: unaligned header size");
     }
+
+    Log::if_enabled(Log::LOADER, [&hdr] (FILE *s) {
+        fprintf(s, "flags: %x, cpu: %d, fpu: %d, base: %x\n", 
+            hdr.header.cflags, hdr.header.cpu, hdr.header.fpu, hdr.header.image_base);
+        fprintf(s, "code %x:%x, stack %x: size %x, heap %x: size %x\n", 
+            hdr.header.code_index, hdr.header.code_offset,
+            hdr.header.stack_index, hdr.header.stack_nbytes,
+            hdr.header.heap_index, hdr.header.heap_nbytes);
+    });
 
     std::unique_ptr<AbstractLoader> loader;
     if (hdr.header.cflags & _TCF_FLAT) {
@@ -314,9 +351,13 @@ void load_executable(const char* path, bool slib) {
             checked_read("loader: read data header", fd.get(), reinterpret_cast<void*>(&ld), sizeof(ld));
             
             uint32_t data_size = rec.data_nbytes - sizeof(ld);
-            Log::print(Log::LOADER, "load data: segment=0x%x, offset=0x%x, size=0x%x\n", ld.segment, ld.offset, data_size);
 
-            void *dst = loader->get_load_addr(ld, data_size);
+            off_t offset = lseek(fd.get(), 0, SEEK_CUR);
+            if (offset < 0) {
+                panic("loader: cannot tell file position\n");
+            }
+            Log::print(Log::LOADER, "load data: segment=0x%x, offset=0x%x, file=0x%lx, size=0x%x\n", ld.segment, ld.offset, offset, data_size);
+            void *dst = loader->prepare_segment_load(ld, offset, data_size);
             checked_read("loader: load data", fd.get(), dst, data_size);
             need_skip = false;
         }
@@ -337,6 +378,7 @@ void load_executable(const char* path, bool slib) {
         /* The selector assignment is bit of a guess. Maybe we should also stash them somewhere else? */
         auto seg = loader->get_segment(si);
         auto sd = proc->create_segment_descriptor(segment_types[si], seg);
+        Log::print(Log::LOADER, "segment %d selector: %x (access %d)\n", si, sd->selector(), segment_types[si]);
         if (hdr.header.code_index == si) {
             FarPointer entry(sd->selector(), loader->m_code_offset);
             if (slib) {
@@ -357,8 +399,5 @@ void load_executable(const char* path, bool slib) {
             ctx.reg_fs() = sd->selector();
             ctx.reg_gs() = sd->selector();
         }
-    }
-    if (!slib) {
-        ctx.reg_edx() = ctx.reg_esp() - hdr.header.stack_nbytes;
     }
 }

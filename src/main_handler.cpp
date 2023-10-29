@@ -340,7 +340,7 @@ void MainHandler::proc_setpgid(MsgContext &i) {
     // find the pids and pgids if needed
     pid_t host_pid = 0;
     if (msg.m_pid) {
-        auto pid_info = i.proc().pids().qnx(msg.m_pid);
+        auto pid_info = i.proc().pids().qnx_valid_host(msg.m_pid);
         if (pid_info) {
             host_pid = pid_info->host_pid();
         } else {
@@ -351,7 +351,7 @@ void MainHandler::proc_setpgid(MsgContext &i) {
 
     pid_t host_pgid = 0;
     if (msg.m_pgid) {
-        auto pgid_info = i.proc().pids().qnx(msg.m_pgid);
+        auto pgid_info = i.proc().pids().qnx_valid_host(msg.m_pgid);
         if (pgid_info) {
             host_pgid = pgid_info->host_pid();
         } else {
@@ -899,7 +899,7 @@ void MainHandler::proc_wait(MsgContext &i) {
     if (msg.m_pid == -1 || msg.m_pid == 0) {
         wait_code = msg.m_pid;
     } else if (msg.m_pid > 0) {
-        auto pid = i.proc().pids().qnx(msg.m_pid);
+        auto pid = i.proc().pids().qnx_valid_host(msg.m_pid);
         if (!pid) {
             i.msg().write_status(Qnx::QECHILD);
             return;
@@ -908,13 +908,12 @@ void MainHandler::proc_wait(MsgContext &i) {
         }
 
     } else if (msg.m_pid < -1) {
-        auto pid = i.proc().pids().qnx(-msg.m_pid);
+        auto pid = i.proc().pids().qnx_valid_host(-msg.m_pid);
         if (!pid) {
             i.msg().write_status(Qnx::QECHILD);
             return;
-        } else {
-            wait_code = pid->host_pid();
         }
+        wait_code = -pid->host_pid();
     }
 
     int wait_options = 0;

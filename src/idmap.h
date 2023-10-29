@@ -95,6 +95,8 @@ T* IdMap<T>::operator[](Id i) {
 
 template <class T>
 void IdMap<T>::free(Id i) {
+    if (i >= m_data.size())
+        return;
     m_data[i].release();
 }
 

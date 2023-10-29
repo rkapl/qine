@@ -56,17 +56,21 @@ private:
     std::vector<bool> m_bitmap;
 };
 
-/* Helper class to allocate small chunks of memory from segment */
-class SegmentAllocator {
+/* Helper class to allocate small chunks of memory from data segment.
+ * EBX/ECX is used to track SBRK information 
+ */
+class StartupSbrk {
 public:
-    SegmentAllocator(Segment *seg);
-    ~SegmentAllocator();
+    StartupSbrk(Segment *seg, uint32_t offset);
+    ~StartupSbrk();
     void alloc(uint32_t size);
     void push_string(const char *str);
 
     // Info for manipulating the last allocated chunk
     uint32_t offset() const;
     void *ptr() const;
+
+    uint32_t next_offset() const;
 private:
     Segment *m_segment;
     uint32_t m_offset;
