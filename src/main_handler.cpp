@@ -15,14 +15,14 @@
 #include <sys/ucontext.h>
 #include <sys/uio.h>
 #include <sys/wait.h>
-#include <sys/ioctl.h>
-#include <termios.h>
 #include <vector>
 
 #include "fsutil.h"
 #include "gen_msg/common.h"
 #include "gen_msg/dev.h"
 #include "gen_msg/fsys.h"
+#include "gen_msg/proc.h"
+#include "gen_msg/io.h"
 #include "mem_ops.h"
 #include "msg.h"
 #include "msg/meta.h"
@@ -46,8 +46,6 @@
 #include "qnx/pathconf.h"
 #include "unique_fd.h"
 #include "util.h"
-#include <gen_msg/proc.h>
-#include <gen_msg/io.h>
 
 
 void MainHandler::receive(MsgContext& i) {
@@ -244,6 +242,12 @@ void MainHandler::receive_inner(MsgContext& i) {
             break;
         case QnxMsg::io::msg_utime::TYPE:
             io_utime(i);
+            break;
+        case QnxMsg::io::msg_ioctl::TYPE:
+            io_ioctl(i);
+            break;
+        case QnxMsg::io::msg_qioctl::TYPE:
+            io_qioctl(i);
             break;
 
         case QnxMsg::fsys::msg_unlink::TYPE:
@@ -1217,6 +1221,26 @@ void MainHandler::io_rewinddir(MsgContext &i) {
     i.msg().write_status(Qnx::QEOK);
 }
 
+void MainHandler::io_qioctl(MsgContext &i) {
+    QnxMsg::io::qioctl_request msg;
+    i.msg().read_type(&msg);
+
+    Ioctl ioctl(&i);
+    if (ioctl.request_group() == 't') {
+        terminal_qioctl(ioctl);
+    } else  {
+        ioctl.set_status(Qnx::QENOSYS);
+    }
+    ioctl.write_response_header();
+}
+
+void MainHandler::io_ioctl(MsgContext &i) {
+    QnxMsg::io::ioctl_request msg;
+    i.msg().read_type(&msg);
+
+    i.msg().write_status(Qnx::QENOSYS);
+}
+
 void MainHandler::transfer_stat(QnxMsg::io::stat& dst, struct stat& src) {
     dst.m_ino = src.st_ino;
     dst.m_dev = src.st_dev;
@@ -1697,96 +1721,6 @@ void MainHandler::fsys_pipe(MsgContext &i) {
     i.msg().write_status(Qnx::QEOK);
 }
 
-void MainHandler::dev_tcgetattr(MsgContext &i) {
-    QnxMsg::dev::tcgetattr_request msg;
-    i.msg().read_type(&msg);
-
-    QnxMsg::dev::tcgetattr_reply reply;
-    memset(&reply, 0, sizeof(reply));
-
-    struct termios attr;
-    int r = tcgetattr(i.map_fd(i.m_fd), &attr);
-    if (r < 0) {
-        reply.m_status = Emu::map_errno(errno);
-        i.msg().write_type(0, &reply);
-        return;
-    }
-
-    // TODO: do a real translate
-    reply.m_status = Qnx::QEOK;
-    for(size_t i = 0; i < std::min(NCCS, Qnx::QNCCS); i++) {
-        reply.m_state.m_c_cc[i] = attr.c_cc[i];
-    }
-    reply.m_state.m_c_ispeed = attr.c_ispeed;
-    reply.m_state.m_c_ospeed = attr.c_ospeed;
-    reply.m_state.m_c_line = attr.c_line;
-    reply.m_state.m_cflag = attr.c_cflag;
-    reply.m_state.m_iflag = attr.c_iflag;
-    reply.m_state.m_lflag = attr.c_lflag;
-    reply.m_state.m_oflag = attr.c_oflag;
-
-    i.msg().write_type(0, &reply);
-}
-
-void MainHandler::dev_tcsetattr(MsgContext &i) {
-    QnxMsg::dev::tcsetattr_request msg;
-    i.msg().read_type(&msg);
-
-    struct termios attr;
-
-    // TODO: do a real translate
-
-    for(size_t i = 0; i < std::min(NCCS, Qnx::QNCCS); i++) {
-        attr.c_cc[i] = msg.m_state.m_c_cc[i];
-    }
-    attr.c_ispeed = msg.m_state.m_c_ispeed;
-    attr.c_ospeed = msg.m_state.m_c_ospeed;
-    attr.c_line = msg.m_state.m_c_line;
-    attr.c_cflag = msg.m_state.m_cflag;
-    attr.c_iflag = msg.m_state.m_iflag;
-    attr.c_lflag = msg.m_state.m_lflag;
-    attr.c_oflag = msg.m_state.m_oflag;
-
-    int r = tcsetattr(i.map_fd(i.m_fd), msg.m_optional_actions, &attr);
-    if (r < 0) {
-        i.msg().write_status(Emu::map_errno(Qnx::QEOK));
-    } else {
-        i.msg().write_status(Emu::map_errno(Qnx::QEOK));
-    }   
-}
-
-void MainHandler::dev_term_size(MsgContext &i) {
-    QnxMsg::dev::term_size_request msg;
-    i.msg().read_type(&msg);
-    constexpr uint16_t no_change = std::numeric_limits<uint16_t>::max();
-
-    winsize term_winsize;
-    int r = ioctl(i.map_fd(msg.m_fd), TIOCGWINSZ, &term_winsize);
-    if (r < 0) {
-        i.msg().write_status(Emu::map_errno(errno));
-    }
-
-    QnxMsg::dev::term_size_reply reply;
-    clear(&reply);
-    reply.m_oldcols = msg.m_cols;
-    reply.m_oldrows = msg.m_rows;
-
-    if (msg.m_cols != no_change || msg.m_rows != no_change) {
-        if (msg.m_cols != no_change)
-            term_winsize.ws_col = msg.m_cols;
-        if (msg.m_rows != no_change)
-            term_winsize.ws_row = msg.m_rows;
-
-        r = ioctl(msg.m_fd, TIOCSWINSZ, &term_winsize);
-        if (r < 0) {
-            i.msg().write_status(Emu::map_errno(errno));
-        }
-    }
-
-    reply.m_status = Qnx::QEOK;
-    i.msg().write_type(0, &reply);
-}
-
 void MainHandler::dev_info(MsgContext &i) {
     QnxMsg::dev::dev_info_request msg;
     i.msg().read_type(&msg);
@@ -1845,50 +1779,4 @@ bool MainHandler::fill_dev_info(MsgContext &i, QnxFd *fd, QnxMsg::dev::dev_info 
         strlcpy(dst->m_tty_name, path.qnx_path(), sizeof(dst->m_tty_name));
     }
     return 0; 
-}
-
-void MainHandler::dev_tcgetpgrp(MsgContext &i) {
-    QnxMsg::dev::tcgetpgrp_request msg;
-    i.msg().read_type(&msg);
-
-    pid_t host_pgrp = tcgetpgrp(i.map_fd(msg.m_fd));
-    QnxMsg::dev::tcgetpgrp_reply reply;
-    clear(&reply);
-    if (host_pgrp < 0) {
-        reply.m_status = Emu::map_errno(errno);
-    } else {
-        auto pgrp = i.proc().pids().host(host_pgrp);
-        if (pgrp == nullptr) {
-            reply.m_pgrp = QnxPid::PID_UNKNOWN;
-        } else {
-            reply.m_pgrp = pgrp->qnx_pid();
-        }
-        reply.m_status = Qnx::QEOK;
-    }
-    i.msg().write_type(0, &reply);
-}
-
-
-void MainHandler::dev_tcsetpgrp(MsgContext &i) {
-    QnxMsg::dev::tcsetpgrp_request msg;
-    i.msg().read_type(&msg);
-
-    QnxMsg::dev::tcgetpgrp_reply reply;
-    clear(&reply);
-
-    int host_fd = i.map_fd(msg.m_fd);
-    auto pgrp_pid = i.proc().pids().qnx(msg.m_pgrp);
-
-    if (!pgrp_pid) {
-        reply.m_status = Qnx::QEINVAL;
-    } else {
-        //printf("setting pgprp to %d from %d\n", pgrp_pid->host_pid(), getpid());
-        int r = tcsetpgrp(host_fd, pgrp_pid->host_pid());
-        if (r < 0) {
-            reply.m_status = Emu::map_errno(errno);
-        } else {
-            reply.m_status = Qnx::QEOK;
-        }
-    }
-    i.msg().write_type(0, &reply);
 }

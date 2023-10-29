@@ -46,17 +46,19 @@ void Msg::dump_send(FILE *f) {
 }
 
 void Msg::dump_structure(FILE *f) {
-    size_t start  = 0;
-    for (size_t i = 0; i < m_rcv_parts; i++) {
-        auto r = &m_rcv[i];
-        printf("rcv: %04zx - %04zx -> %04x:%08x\n", start, start + r->mxfer_len, r->mxfer_seg, r->mxfer_off);
-        start += r->mxfer_len;
-    }
+    size_t start;
 
     start  = 0;
     for (size_t i = 0; i < m_send_parts; i++) {
         auto r = &m_send[i];
         printf("snd: %04zx - %04zx -> %04x:%08x\n", start, start + r->mxfer_len, r->mxfer_seg, r->mxfer_off);
+        start += r->mxfer_len;
+    }
+
+    start = 0;
+    for (size_t i = 0; i < m_rcv_parts; i++) {
+        auto r = &m_rcv[i];
+        printf("rcv: %04zx - %04zx -> %04x:%08x\n", start, start + r->mxfer_len, r->mxfer_seg, r->mxfer_off);
         start += r->mxfer_len;
     }
 }

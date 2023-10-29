@@ -1,5 +1,6 @@
 #pragma once
 
+#include "qnx/errno.h"
 #include "types.h"
 #include <cstddef>
 #include <cstdint>
@@ -10,9 +11,16 @@
 
 class Process;
 
+/* Exception thrown when the guest does something we really do not want to handle */
 class GuestStateException: public std::runtime_error {
 public:
     GuestStateException(const char *what): std::runtime_error(what) {}
+};
+
+/* We tried to access inaccesible memory, e.g. when reading message. This is often propagate as error code. */
+class SegmentationFault: public std::runtime_error {
+public:
+    SegmentationFault(const char *what): std::runtime_error(what) {}
 };
 
 /* x64 does not restore FS and GS to known values on signal entry, we need to reload them */
@@ -107,6 +115,16 @@ public:
     #else
     #error 32bit unsupported for now
     #endif
+
+    inline void set_carry() { reg_eflags() |= 1; }
+    inline void clear_carry() { reg_eflags() &=  ~1u; }
+    inline void set_syscall_error(int qnx_errno) {
+        reg_eax() = qnx_errno;
+        set_carry();
+    }
+    inline void set_syscall_ok() {
+        reg_eax() = Qnx::QEOK;
+    }
 
 private:
     #ifdef __amd64__

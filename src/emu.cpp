@@ -244,27 +244,31 @@ void Emu::syscall_sigreturn(GuestContext &ctx)
 
 void Emu::dispatch_syscall(GuestContext& ctx)
 {
-    uint8_t syscall = ctx.reg_al();
-    switch (syscall) {
-        case 0:
-            syscall_sendmx(ctx);
-            break;
-        case 1:
-            syscall_receivmx(ctx);
-            break;
-        case 7:
-            syscall_sigreturn(ctx);
-            break;
-        case 11:
-            syscall_sendfdmx(ctx);
-            break;
-        case 14:
-            syscall_kill(ctx);
-            break;
-        default:
-            printf("Unknown syscall %d\n", syscall);
-            ctx.proc()->set_errno(Qnx::QENOSYS);
-            ctx.reg_eax() = -1;
+    try {
+        uint8_t syscall = ctx.reg_al();
+        switch (syscall) {
+            case 0:
+                syscall_sendmx(ctx);
+                break;
+            case 1:
+                syscall_receivmx(ctx);
+                break;
+            case 7:
+                syscall_sigreturn(ctx);
+                break;
+            case 11:
+                syscall_sendfdmx(ctx);
+                break;
+            case 14:
+                syscall_kill(ctx);
+                break;
+            default:
+                printf("Unknown syscall %d\n", syscall);
+                ctx.set_syscall_error(Qnx::QENOSYS);
+        }
+    } catch (const SegmentationFault& e) {
+        Log::print(Log::UNHANDLED, "Segfault during message handling: %s\n", e.what());
+        ctx.set_syscall_error(Qnx::QEFAULT);
     }
 }
 
@@ -287,6 +291,7 @@ void Emu::syscall_sendfdmx(GuestContext &ctx)
     info.m_fd = fd;
 
     proc->handle_msg(info);
+    ctx.set_syscall_ok();
 }
 
 void Emu::syscall_receivmx(GuestContext &ctx)
@@ -298,9 +303,9 @@ void Emu::syscall_receivmx(GuestContext &ctx)
 
     if (pid == ctx.proc()->pid() || pid == QnxPid::PID_PROC || pid == 0) {
         pause();
-        ctx.reg_eax() = Qnx::QEINTR;
+        ctx.set_syscall_error(Qnx::QEINTR);
     } else {
-        ctx.reg_eax() = Qnx::QESRCH;
+        ctx.set_syscall_error(Qnx::QESRCH);
     }
 }
 
@@ -325,6 +330,7 @@ void Emu::syscall_sendmx(GuestContext &ctx)
     info.m_pid = pid;
 
     proc->handle_msg(info);
+    ctx.set_syscall_ok();
 }
 
 void Emu::syscall_kill(GuestContext &ctx)
@@ -332,28 +338,28 @@ void Emu::syscall_kill(GuestContext &ctx)
     int32_t pid = ctx.reg_edx();
     if (pid < 0) {
         Log::print(Log::UNHANDLED, "signal negative pid. process group?\n");
-        ctx.reg_eax() = Qnx::QEINVAL;
+        ctx.set_syscall_error(Qnx::QEINVAL);
         return;
     }
     int qnx_signo = ctx.reg_ebx();
     int host_signo = QnxSigset::map_sig_qnx_to_host(qnx_signo);
     if (host_signo == -1) {
         Log::print(Log::UNHANDLED, "QNX signal %d unknown\n", qnx_signo);
-        ctx.reg_eax() = Qnx::QEINVAL;
+        ctx.set_syscall_error(Qnx::QEINVAL);
         return;
     }
 
     auto pid_info = ctx.proc()->pids().qnx(pid);
     if (!pid_info) {
-        ctx.reg_eax() = Qnx::QESRCH;
+        ctx.set_syscall_error(Qnx::QESRCH);
         return;
     } else {
         Log::print(Log::SIG ,"syscall_kill host pid %d, signo %d\n", pid_info->host_pid(), qnx_signo);
         int r = kill(pid_info->host_pid(), host_signo);
         if (r < 0) {
-            ctx.reg_eax() = map_errno(errno);
+            ctx.set_syscall_error(map_errno(errno));
         } else {
-            ctx.reg_eax() = Qnx::QEOK;
+            ctx.set_syscall_ok();
         }
     }
 }

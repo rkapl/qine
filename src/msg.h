@@ -95,6 +95,7 @@ private:
     Qnx::mxfer_entry* m_send;
 };
 
+/* Allows reading message byte-by-byte */
 class MsgStreamReader {
 public:
     inline MsgStreamReader(Msg *msg, size_t skip = 0);

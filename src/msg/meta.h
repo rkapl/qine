@@ -1,17 +1,16 @@
 #pragma once
 
-#include <cstdint>
-#pragma  once
 #include <stdint.h>
 #include <stddef.h>
+#include "qnx/term.h"
 
 #include "../compiler.h"
 
 namespace Qnx {
     /* See comment in io_msg.h */
     using PathBuf = char[256];
-    constexpr int QNCCS = 40;
-    using TermCc = uint16_t[QNCCS];
+
+    using Termios = Qnx::termios;
     using Stdfds = uint8_t[10];
     using Time = int32_t;
 }
@@ -30,7 +29,7 @@ namespace Meta {
 
     struct Field {
         enum class Format {
-            SUB, CHAR, U8, U16, U32, I8, I16, I32,  PID, NID, FD, PATH, TERM_CC, TIME, STDFDS
+            SUB, CHAR, U8, U16, U32, I8, I16, I32,  PID, NID, FD, PATH, TERMIOS, TIME, STDFDS
         };
         enum class Presentation {
             DEFAULT, HEX, OCT

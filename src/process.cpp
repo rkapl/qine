@@ -122,10 +122,10 @@ void* Process::translate_segmented(FarPointer ptr, uint32_t size, RwOp write)
 {
     auto sd = descriptor_by_selector(ptr.m_segment);
     if (!sd)
-        throw GuestStateException("segment not present");
+        throw SegmentationFault("segment not present");
     
     if (!sd->segment()->check_bounds(ptr.m_offset, size))
-        throw GuestStateException("address out of segment bounds");
+        throw SegmentationFault("address out of segment bounds");
 
     // TODO: write check not implemented
     
@@ -193,7 +193,6 @@ void Process::handle_msg(MsgContext& m)
     Qnx::MsgHeader hdr;
     msg.read_type(&hdr);
 
-    // most of this functio is loggin
     bool msg_searched = false;
     const Meta::Message *msg_type = nullptr;
 
@@ -223,7 +222,7 @@ void Process::handle_msg(MsgContext& m)
                 break;
         }
         if (ml)
-            msg_type = Meta::find_message(stdout, *ml, msg);
+            msg_type = Meta::find_message(stdout, *ml, hdr);
     };
 
     Log::if_enabled(Log::MSG, [&](FILE *s) {
@@ -242,7 +241,6 @@ void Process::handle_msg(MsgContext& m)
     });
 
     // meat of the function
-    // TODO: allow dispatching to individual handler
     m_main_handler.receive(m);
 
     Log::if_enabled(Log::MSG_REPLY, [&](FILE *s) {

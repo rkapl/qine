@@ -1,14 +1,3 @@
-struct termios{
-     iflag: u32;
-     oflag: u32;
-     cflag: u32;
-     lflag: u32;
-     c_line: u16;
-     c_cc: term_cc;
-     c_ispeed: i32;
-     c_ospeed: i32;
-}
-
 msg tcgetattr {
      type: 0x310;
      request {

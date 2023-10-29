@@ -16,6 +16,7 @@ namespace QnxMsg::dev {
     struct dev_info;
 }
 
+
 class QnxFd;
 
 /* Handles proc messages and passtrough FD messages */
@@ -76,6 +77,8 @@ private:
     void io_chmod(MsgContext &i);
     void io_chown(MsgContext &i);
     void io_utime(MsgContext &i);
+    void io_ioctl(MsgContext &i);
+    void io_qioctl(MsgContext &i);
 
     void fsys_unlink(MsgContext &i);
     void fsys_mkspecial(MsgContext &i);
@@ -88,13 +91,27 @@ private:
 
     void transfer_stat(QnxMsg::io::stat& dst, struct stat& src);
 
-    void dev_tcgetattr(MsgContext &i);
-    void dev_tcsetattr(MsgContext &i);
     void dev_fdinfo(MsgContext &i);
     void dev_info(MsgContext &i);
     // errno if false
     bool fill_dev_info(MsgContext &i, QnxFd *fd, QnxMsg::dev::dev_info *dst);
+
+    // term_handler.cpp
+    void terminal_qioctl(Ioctl &i);
+
+    void dev_tcgetattr(MsgContext &i);
+    void dev_tcsetattr(MsgContext &i);
     void dev_tcsetpgrp(MsgContext &i);
     void dev_tcgetpgrp(MsgContext &i);
     void dev_term_size(MsgContext &i);
+    void ioctl_terminal_get_size(Ioctl &i);
+    void ioctl_terminal_set_size(Ioctl &i);
+
+    // These low-level handler return QNX errno and translate QNX calls to host calls
+    // They are used both for ioctl-style and msg-style calls, if possible
+
+    uint16_t handle_tcgetattr(MsgContext &i, int16_t qnx_fd, Qnx::termios *dst);
+    uint16_t handle_tcsetattr(MsgContext &i, int16_t qnx_fd, const Qnx::termios *termios, int optional_actions);
+    uint16_t handle_tcsetpgrp(MsgContext &i, int16_t qnx_fd, int16_t qnx_pgrp);
+    uint16_t handle_tcgetpgrp(MsgContext &i, int16_t qnx_fd, int16_t *qnx_pgrp_dst);
 };

@@ -118,11 +118,7 @@ void Meta::dump_structure_written(FILE* s, const Meta::Struct &t, Msg& msg) {
     dump_substructure(s, t, 1, 0, msg_buf.get());
 }
 
-const Meta::Message* Meta::find_message(FILE *s, const MessageList &list, Msg &msg) {
-    Qnx::MsgHeader hdr; 
-    msg.read_type(&hdr);
-
-    
+const Meta::Message* Meta::find_message(FILE *s, const MessageList &list, const Qnx::MsgHeader& hdr) {
     auto match_msg = [&hdr] (const Meta::Message* t) -> bool {
         bool type_match = t->m_type == hdr.type;
         bool subtype_match = (t->m_subtype == hdr.subtype);

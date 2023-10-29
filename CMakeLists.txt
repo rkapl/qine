@@ -23,7 +23,7 @@ add_executable(qine
   src/guest_context.cpp src/guest_context.h
   src/loader.h src/loader.cpp src/loader_format.h
   src/log.h src/log.cpp
-  src/main_handler.h src/main_handler.cpp
+  src/main_handler.h src/main_handler.cpp src/term_handler.cpp
   src/msg_handler.h src/msg_handler.cpp
   src/path_mapper.h src/path_mapper.cpp
   src/process.h src/process.cpp
@@ -49,5 +49,6 @@ add_custom_command(
 
 target_compile_features(qine PUBLIC cxx_std_17)
 set_target_properties(qine PROPERTIES CXX_EXTENSIONS OFF)
-#set_target_properties(qine PROPERTIES COMPILE_FLAGS -m32)
+# We are runnign on x86 and it make sense for accessing msg member
+set_target_properties(qine PROPERTIES COMPILE_FLAGS -Wno-address-of-packed-member)
 #set_target_properties(qine PROPERTIES LINK_FLAGS -m32)

@@ -246,3 +246,36 @@ msg utime {
 
      reply status;
 }
+
+msg ioctl {
+     type: 0x0114;
+
+     request {
+          fd: fd;
+          request: u16 hex;
+          nbytes: u16;
+          padd: u32;
+     }
+     reply {
+          status: u16;
+          ret_val: u16;
+          padd: u32;
+     }
+}
+
+msg qioctl {
+     type: 0x0117;
+
+     request {
+          fd: fd;
+          request: u16 hex;
+          nbytes: u16;
+          padd: u32;
+     }
+     reply {
+          status: u16;
+          ret_val: u16;
+          padd: u32;
+          padd: u32;
+     }
+}
