@@ -33,11 +33,38 @@ msg link {
     reply status;
 }
 
+msg disk_entry {
+    type: 0x209;
+    request {
+        fd: fd;
+    }
+
+    reply {
+        status: u16;
+        padd: u16;
+
+        blk_offset: u32;
+        num_sectors: u32;
+        disk_sectors: u32;
+        cylinders: u16;
+        heads: u16;
+        track_sectors: u16;
+
+        disk_type: u8;
+        disk_drv: u8;
+        padd: u32;
+        padd: u32;
+        padd: u32;
+        drive_name: char[12];
+    }
+}
+
 msg sync {
     type: 0x20A;
     request {}
     reply status;
 }
+
 
 msg trunc {
     type: 0x210;   
@@ -95,6 +122,34 @@ msg fdinfo {
         fflags: u16;
         share: u16;
         path: path;
+    }
+}
+
+msg get_mount {
+    type: 0x20d;
+    request {
+        open: open;
+        path: path;
+    }
+    reply {
+        status: u16;
+        padd: u16;
+        path: path;
+    }
+}
+
+msg disk_space {
+    type: 0x20e;
+    request {
+        fd: fd;
+        padd: u32;
+    }
+
+    reply {
+        status: u16;
+        padd: u16;
+        free_blocks: u32;
+        total_blocks: u32;
     }
 }
 

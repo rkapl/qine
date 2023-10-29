@@ -27,6 +27,18 @@ bool readlink(const char *path, std::string& dst) {
     }
 }
 
+bool realpath(const char* path, std::string& dst) {
+    dst.clear();
+    
+    char *r = ::realpath(path, nullptr);
+    if (!r) {
+        return false;
+    }
+    dst.append(r);
+    free(r);
+    return true;
+}
+
 bool ttyname(int host_fd, std::string& dst) {
     dst.clear();
 
@@ -70,7 +82,7 @@ std::string change_prefix(const char* prefix, const char *new_prefix, const char
 
     // construct the path
     acc.append(new_prefix);
-    if (*path) {
+    if (*common) {
         if (acc.back() != '/' ) {
             acc.push_back('/');
         }

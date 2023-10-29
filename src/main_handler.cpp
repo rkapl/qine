@@ -6,6 +6,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string.h>
+#include <sys/statvfs.h>
 #include <sys/stat.h>
 #include <system_error>
 #include <unistd.h>
@@ -16,6 +17,7 @@
 #include <sys/uio.h>
 #include <sys/wait.h>
 #include <vector>
+#include <mntent.h>
 
 #include "fsutil.h"
 #include "gen_msg/common.h"
@@ -45,6 +47,7 @@
 #include "log.h"
 #include "qnx/pathconf.h"
 #include "unique_fd.h"
+#include "unique_file.h"
 #include "util.h"
 
 
@@ -273,6 +276,15 @@ void MainHandler::receive_inner(MsgContext& i) {
             break;
         case QnxMsg::fsys::msg_pipe::TYPE:
             fsys_pipe(i);
+            break;
+        case QnxMsg::fsys::msg_disk_entry::TYPE:
+            fsys_disk_entry(i);
+            break;
+        case QnxMsg::fsys::msg_get_mount::TYPE:
+            fsys_get_mount(i);
+            break;
+        case QnxMsg::fsys::msg_disk_space::TYPE:
+            fsys_disk_space(i);
             break;
 
         case QnxMsg::dev::msg_tcgetattr::TYPE:
@@ -1122,6 +1134,8 @@ void MainHandler::io_stat(MsgContext& i) {
     i.msg().read_type(&msg);
     struct stat sb;
 
+    // TODO: handle trailing /
+
     auto p = i.proc().path_mapper().map_path_to_host(msg.m_path, true);
 
     QnxMsg::io::stat_reply reply;
@@ -1146,6 +1160,8 @@ void MainHandler::io_fstat(MsgContext& i) {
     QnxMsg::io::fstat_request msg;
     i.msg().read_type(&msg);
     struct stat sb;
+
+    // TODO: handle trailing /
 
     QnxMsg::io::fstat_reply reply;
     memset(&reply, 0, sizeof(reply));
@@ -1718,6 +1734,95 @@ void MainHandler::fsys_pipe(MsgContext &i) {
         return;
     }
     i.msg().write_status(Qnx::QEOK);
+}
+
+void MainHandler::fsys_disk_entry(MsgContext &i) {
+    QnxMsg::fsys::disk_entry_request msg;
+    i.msg().read_type(&msg);
+
+    QnxMsg::fsys::disk_entry_reply reply;
+    clear(&reply);
+
+    struct statvfs stat;
+    int r = fstatvfs(i.map_fd(msg.m_fd), &stat);
+    if (r < 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+        return;
+    }
+
+    strlcpy(reply.m_drive_name, "/deasd", sizeof(reply.m_drive_name));
+    /* We could maybe get better info about the disk itself */
+    reply.m_disk_sectors = stat.f_blocks;
+    reply.m_num_sectors = stat.f_blocks;
+    reply.m_blk_offset = 0;
+    reply.m_disk_drv = 1;
+    reply.m_disk_type = 2; // harddisk
+    
+    i.msg().write_type(0, &reply);
+}
+
+void MainHandler::fsys_get_mount(MsgContext &i) {
+    int r;
+    QnxMsg::fsys::get_mount_request msg;
+    i.msg().read_type(&msg);
+
+    QnxMsg::fsys::get_mount_reply reply;
+    clear(&reply);
+
+    auto path = i.proc().path_mapper().map_path_to_host(msg.m_path);
+    
+    std::string query_host_path;
+    Fsutil::realpath(path.host_path(), query_host_path);
+    struct stat query_stat;
+    r = stat(query_host_path.c_str(), &query_stat);
+    if (r < 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+        return;
+    }
+
+    struct mntent mntent;
+    constexpr size_t mntent_buf_size = 4096;
+    std::unique_ptr<char[]> mntent_buf(new char[mntent_buf_size]);
+    UniqueMntent fd(setmntent("/etc/mtab", "r"));
+
+    while (getmntent_r(fd.get(), &mntent, mntent_buf.get(), mntent_buf_size)) {
+        if (Fsutil::path_starts_with(path.host_path(), mntent.mnt_dir)) {
+            auto mount_path = i.proc().path_mapper().map_path_to_qnx(mntent.mnt_dir);
+            struct stat mount_stat;
+            r = stat(mount_path.host_path(), &mount_stat);
+            if (r < 0) {
+                i.msg().write_status(Emu::map_errno(errno));
+                return;
+            }
+
+            if (mount_stat.st_dev == query_stat.st_dev) {
+                reply.m_status = Qnx::QEOK;
+                strlcpy(reply.m_path, mount_path.qnx_path(), sizeof(reply.m_path));
+                i.msg().write_type(0, &reply);
+                return;
+            }
+        }
+    }
+    
+    i.msg().write_status(Emu::map_errno(errno));
+}
+
+void MainHandler::fsys_disk_space(MsgContext &i) {
+    QnxMsg::fsys::disk_space_request msg;
+    i.msg().read_type(&msg);
+
+    struct statvfs stat;
+    int r = fstatvfs(i.map_fd(msg.m_fd), &stat);
+    if (r < 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+        return;
+    }
+
+    QnxMsg::fsys::disk_space_reply reply;
+    clear(&reply);
+    reply.m_free_blocks = stat.f_bavail;
+    reply.m_total_blocks = stat.f_blocks;
+    i.msg().write_type(0, &reply);
 }
 
 void MainHandler::dev_info(MsgContext &i) {

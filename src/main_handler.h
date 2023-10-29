@@ -88,6 +88,9 @@ private:
     void fsys_trunc(MsgContext &i);
     void fsys_fsync(MsgContext &i);
     void fsys_pipe(MsgContext &i);
+    void fsys_disk_entry(MsgContext &i);
+    void fsys_get_mount(MsgContext &i);
+    void fsys_disk_space(MsgContext &i);
 
     void transfer_stat(QnxMsg::io::stat& dst, struct stat& src);
 
