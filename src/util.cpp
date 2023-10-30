@@ -1,5 +1,7 @@
 #include "util.h"
 #include <stdexcept>
+#include <stdint.h>
+#include <memory.h>
 
 bool starts_with(std::string_view string, std::string_view prefix) {
     if (prefix.length() > string.length())
@@ -28,4 +30,15 @@ std::string std_vprintf(const char *format, va_list args) {
     vsnprintf(buf.data(), req + 1, format, args);
     buf.resize(req);
     return buf;
+}
+
+size_t qine_strlcpy(char * dst, const char * src, size_t maxlen) {
+    const size_t srclen = strlen(src);
+    if (srclen + 1 < maxlen) {
+        memcpy(dst, src, srclen + 1);
+    } else if (maxlen != 0) {
+        memcpy(dst, src, maxlen - 1);
+        dst[maxlen-1] = '\0';
+    }
+    return srclen;
 }

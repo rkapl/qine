@@ -625,7 +625,7 @@ void MainHandler::proc_psinfo(MsgContext &i)
         }
         ps.proc.father = proc->parent_pid();
 
-        strlcpy(ps.proc.name, proc->file_name().c_str(), sizeof(ps.proc.name));
+        qine_strlcpy(ps.proc.name, proc->file_name().c_str(), sizeof(ps.proc.name));
         i.msg().write_type(2, &ps);
     } else {
         // STUB
@@ -1133,7 +1133,7 @@ void MainHandler::proc_prefix(MsgContext &i)
     reply.m_status = Qnx::QEOK;
 
     if (msg.m_path[0] == 0) {
-        strlcpy(reply.m_prefix, "/=1,a", sizeof(reply.m_prefix));
+        qine_strlcpy(reply.m_prefix, "/=1,a", sizeof(reply.m_prefix));
     } else {
         msg.m_path[0] = 0;
     }
@@ -1159,10 +1159,10 @@ void MainHandler::proc_sid_query(MsgContext &i)
         // stub, we do not have any interesting info
         reply.m_status = Qnx::QEOK;
         reply.m_links = 1;
-        strlcpy(reply.m_name, "sys", sizeof(reply.m_name));
+        qine_strlcpy(reply.m_name, "sys", sizeof(reply.m_name));
         reply.m_pid = msg.m_sid;
         reply.m_sid = msg.m_sid;
-        strlcpy(reply.m_tty_name, ctermid(nullptr), sizeof(reply.m_name));
+        qine_strlcpy(reply.m_tty_name, ctermid(nullptr), sizeof(reply.m_name));
     }
     i.msg().write_type(0, &reply);
 }
@@ -1279,7 +1279,7 @@ void MainHandler::io_readdir(MsgContext &i)
         }
 
         // write the dirent (stat + path)
-        strlcpy(path_buf, d->d_name, sizeof(path_buf));
+        qine_strlcpy(path_buf, d->d_name, sizeof(path_buf));
         i.msg().write_type(dst_off, &stat);
         i.msg().write(dst_off + sizeof(stat), path_buf, sizeof(path_buf));
         dst_off += dirent_size;
@@ -1700,9 +1700,9 @@ void MainHandler::fsys_readlink(MsgContext &i) {
     } else {
         if (!target_path_raw.empty() && target_path_raw[0] == '/') {
             auto target_path = i.proc().path_mapper().map_path_to_qnx(target_path_raw.c_str());
-            strlcpy(reply.m_path, target_path.qnx_path(), sizeof(reply.m_path));
+            qine_strlcpy(reply.m_path, target_path.qnx_path(), sizeof(reply.m_path));
         } else {
-            strlcpy(reply.m_path, target_path_raw.c_str(), sizeof(reply.m_path));
+            qine_strlcpy(reply.m_path, target_path_raw.c_str(), sizeof(reply.m_path));
         }
         reply.m_status = Qnx::QEOK;
         i.msg().write_type(0, &reply);
@@ -1815,7 +1815,7 @@ void MainHandler::fsys_disk_entry(MsgContext &i) {
         return;
     }
 
-    strlcpy(reply.m_drive_name, "/deasd", sizeof(reply.m_drive_name));
+    qine_strlcpy(reply.m_drive_name, "/deasd", sizeof(reply.m_drive_name));
     /* We could maybe get better info about the disk itself */
     reply.m_disk_sectors = stat.f_blocks;
     reply.m_num_sectors = stat.f_blocks;
@@ -1862,7 +1862,7 @@ void MainHandler::fsys_get_mount(MsgContext &i) {
 
             if (mount_stat.st_dev == query_stat.st_dev) {
                 reply.m_status = Qnx::QEOK;
-                strlcpy(reply.m_path, mount_path.qnx_path(), sizeof(reply.m_path));
+                qine_strlcpy(reply.m_path, mount_path.qnx_path(), sizeof(reply.m_path));
                 i.msg().write_type(0, &reply);
                 return;
             }
@@ -1941,14 +1941,14 @@ bool MainHandler::fill_dev_info(MsgContext &i, QnxFd *fd, QnxMsg::dev::dev_info 
         return false;
     }
 
-    strlcpy(dst->m_driver_type, "pseudo", sizeof(dst->m_driver_type));
+    qine_strlcpy(dst->m_driver_type, "pseudo", sizeof(dst->m_driver_type));
 
     auto path = i.proc().path_mapper().map_path_to_qnx(ttyname.c_str());
 
     if (strlen(path.qnx_path()) + 1 > sizeof(dst->m_tty_name)) {
-        strlcpy(dst->m_tty_name, "/dev/too-long", sizeof(dst->m_tty_name));
+        qine_strlcpy(dst->m_tty_name, "/dev/too-long", sizeof(dst->m_tty_name));
     } else {
-        strlcpy(dst->m_tty_name, path.qnx_path(), sizeof(dst->m_tty_name));
+        qine_strlcpy(dst->m_tty_name, path.qnx_path(), sizeof(dst->m_tty_name));
     }
     return true; 
 }
