@@ -1047,10 +1047,15 @@ void MainHandler::proc_wait(MsgContext &i) {
 
 uint32_t MainHandler::map_file_flags_to_host(uint32_t oflag) {
     uint32_t mapped_oflags = 0;
-    if (oflag & Qnx::QO_WRONLY)
+    auto acc = oflag & Qnx::QO_ACCMODE;
+
+    if (acc == Qnx::QO_RDONLY)
+        mapped_oflags |= O_RDONLY;
+    
+    if (acc == Qnx::QO_WRONLY)
         mapped_oflags |= O_WRONLY;
     
-    if (oflag & Qnx::QO_RDWR)
+    if (acc == Qnx::QO_RDWR)
         mapped_oflags |= O_RDWR;
 
     if (oflag & Qnx::QO_APPEND)
@@ -1059,8 +1064,13 @@ uint32_t MainHandler::map_file_flags_to_host(uint32_t oflag) {
     if (oflag & Qnx::QO_CREAT)
         mapped_oflags |= O_CREAT;
     
-    if (oflag & Qnx::QO_TRUNC)
-        mapped_oflags |= O_TRUNC;
+    if (oflag & Qnx::QO_TRUNC) {
+        // according to POSIX, this is unspecified, but Linux accepts it (despite the manpage claiming otherwise)
+        // and QNX rejects it
+        if (acc == Qnx::QO_RDWR || acc == Qnx::QO_WRONLY) {
+            mapped_oflags |= O_TRUNC;
+        }
+    }
 
     if (oflag & Qnx::QO_NOCTTY)
         mapped_oflags |= O_NOCTTY;
