@@ -49,6 +49,20 @@ struct FarPointer {
     static constexpr FarPointer null(){ return FarPointer(0, 0); }
 };
 
+struct FarPointer16 {
+    FarPointer16() = default;
+    constexpr FarPointer16(uint16_t segment, uint16_t offset): m_segment(segment), m_offset(offset) {}
+    explicit FarPointer16(FarPointer ptr): FarPointer16(ptr.m_segment, ptr.m_offset) {}
+
+    /* Yes, the typical storage of far pointers seem to be the other way around */
+    uint16_t m_offset;
+    /* This is selector, not segment id! */
+    uint16_t m_segment;
+
+    static constexpr FarPointer16 null(){ return FarPointer16(0, 0); }
+};
+
+
 
 struct FarSlice {
     FarSlice() = default;

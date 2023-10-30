@@ -105,6 +105,12 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
         handled = true;
     }
 
+    if (ctx.reg_ds() == Qnx::MAGIC_PTR_SELECTOR) {
+        ctx.reg_ds() = Qnx::MAGIC_PTR_SELECTOR | 4;
+        //printf("Migrating to LDT @ %x\n", ctx.reg_eip());
+        handled = true;
+    }
+
     if (matches_syscall(ctx)) {
         ctx.reg_eip() += 2;
         // note: syscall includes sysreturn which may change eip

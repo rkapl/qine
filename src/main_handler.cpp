@@ -831,7 +831,6 @@ void MainHandler::proc_exec_common(MsgContext &i) {
         final_argv.push_back(a.c_str());
     }
 
-    //final_argv.push_back("--");
     
     for (auto p: argvp) {
         final_argv.push_back(p);
@@ -855,8 +854,22 @@ void MainHandler::proc_exec_common(MsgContext &i) {
     for (auto o: argvp) {
         //printf("Env %s\n", o);
     }
-
     //printf("About to exec: %s\n", final_argv[0]);
+
+    // redirect file descriptors
+    for (size_t fdi = 0; fdi < 10; fdi++) {
+        uint8_t fd = msg.m_stdfds[fdi];
+        if (fd == 0xFF)
+            continue;
+        
+        // ASSSUME: fd mapping is identical
+        if (fd != fdi)
+            dup2(i.map_fd(fd), fdi);
+
+        // disable cloexec
+        fcntl(fdi, F_SETFD, 0);
+    }
+
     execve(final_argv[0], const_cast<char**>(final_argv.data()), const_cast<char**>(envp.data()));
 }
 
@@ -1095,7 +1108,6 @@ void MainHandler::io_open(MsgContext& i) {
     fd->m_path = PathInfo::mk_qnx_path(msg.m_file, true);
     i.proc().path_mapper().map_path_to_host(fd->m_path);
     
-    // TODO: handle cloexec and flags
     UniqueFd tmp_fd(::open(fd->m_path.host_path(), mapped_oflags, msg.m_open.m_mode));
     if (!tmp_fd.valid()) {
         i.msg().write_status(Emu::map_errno(errno));

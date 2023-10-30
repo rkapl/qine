@@ -26,7 +26,7 @@ void SegmentDescriptor::update_descriptors() {
         ud.limit = m_seg->size() - 1;
         ud.limit_in_pages = 0;
     }
-    ud.seg_32bit = 1;
+    ud.seg_32bit = 0;
     ud.useable = 1;
     ud.read_exec_only = 0;
     if (m_access == Access::EXEC_ONLY || m_access == Access::EXEC_READ) {

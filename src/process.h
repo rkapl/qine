@@ -81,7 +81,7 @@ private:
     ~Process();
 
     SegmentDescriptor* descriptor_by_selector(uint16_t id);
-    void setup_magic(SegmentDescriptor *data_sd, StartupSbrk& alloc);
+    void setup_magic(SegmentDescriptor *data_sd, StartupSbrk& alloc, bool b16);
     void initialize();
     void initialize_pids();
 

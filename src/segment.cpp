@@ -23,7 +23,7 @@ void Segment::reserve(size_t reservation)
 
     // see https://github.com/wine-mirror/wine/blob/master/loader/preloader.c
     void *l = mmap(NULL, reservation, PROT_NONE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE | MAP_32BIT, -1, 0);
-    if (m_location == MAP_FAILED) {
+    if (l == MAP_FAILED) {
         throw std::bad_alloc();
     }
     m_location = l;
@@ -82,7 +82,7 @@ void Segment::grow(Access access, size_t size)
     int prot = map_prot(access);
     void *start = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(m_location) + m_paged_size);
     void *l = mmap(start, size, prot, MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0);
-    if (m_location == MAP_FAILED) {
+    if (l == MAP_FAILED) {
         throw std::bad_alloc();
     }
 
