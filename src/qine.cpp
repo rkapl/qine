@@ -36,12 +36,19 @@ static void handle_help() {
 
 int opt_no_slib;
 
+namespace Opt {
+    enum {
+        EXEC = 200,
+    };
+}
+
 static struct option cmd_options[] = {
     {"help", no_argument, 0, 'h'},
     {"debug", required_argument, 0, 'd'},
     {"map", required_argument, 0, 'm'},
     {"lib", required_argument, 0, 'l'},
     {"no-slib", no_argument, &opt_no_slib, 1},
+    {"exec", required_argument, 0, Opt::EXEC},
 };
 
 
@@ -51,6 +58,7 @@ int main(int argc, char **argv) {
     auto proc = Process::create();
 
     std::vector<std::function<void()>> delayed_args;
+    std::string opt_exec;
 
     try {
         for (;;) {
@@ -80,6 +88,9 @@ int main(int argc, char **argv) {
                 case 'm':
                     proc->path_mapper().add_map(optarg);
                     break;
+                case Opt::EXEC:
+                    opt_exec = optarg;
+                    break;
                 default:
                     fprintf(stderr, "getopt unknown code 0x%x\n", c);
                     exit(1);
@@ -90,13 +101,16 @@ int main(int argc, char **argv) {
             d();
 
         if (!proc->slib_loaded() && !opt_no_slib) {
-            fprintf(stderr, "No system specified on commandline using --lib. "
+            fprintf(stderr, "No system library specified on commandline using --lib. "
                 "For most executables, this needs to be specified. Use --no-slib to override\n");
             exit(1);
         }
 
+        /* Remember all the arguments in case Qine needs to exec itself (to run another QNX binary) */
         std::vector<std::string> self_call;
         for (int i = 0; i < optind; i++) {
+            if (strcmp(argv[i], "--") == 0)
+                continue;
             self_call.push_back(argv[i]);
         }
         self_call[0] = std::filesystem::absolute(self_call[0]);
@@ -110,18 +124,21 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    if (argc == 0) {
+    if (argc == 0 && opt_exec.empty()) {
         fprintf(stderr, "program arguments expected\n");
         return 1;
     }
 
-    if (Fsutil::is_abs(argv[0])) {
+    std::string exec;
+    if (!opt_exec.empty()) {
+        exec = opt_exec.c_str();
+    } else if (Fsutil::is_abs(argv[0])) {
         auto exec_path = proc->path_mapper().map_path_to_host(argv[0]);
-        proc->load_executable(exec_path.host_path());
+        exec = exec_path.host_path();
     } else {
-        proc->load_executable(argv[0]);
+        exec = argv[0];
     }
-
+    proc->load_executable(exec.c_str());
     proc->setup_startup_context(argc, argv);
 
     proc->enter_emu();

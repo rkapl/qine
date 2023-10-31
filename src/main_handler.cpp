@@ -766,7 +766,7 @@ void MainHandler::proc_exec_common(MsgContext &i) {
     i.msg().read_type(&msg);
     MsgStreamReader r(&i.msg(), sizeof(QnxMsg::proc::spawn));
 
-    // copy into an owned buf and remember offsets into the buf
+    // copy the arguments from the spawn message into an owned buf and remember offsets into the buf
     std::vector<char> buf;
     std::vector<size_t > argvo;
     std::vector<size_t > envo;
@@ -802,7 +802,8 @@ void MainHandler::proc_exec_common(MsgContext &i) {
         len = read_string();
     }
 
-    // now that the buf is ready, convert offsets into pointers
+    // now that the buf is ready and will not be moved, convert offsets into pointers
+
     std::vector<const char*> argvp;
     std::vector<const char*> envp;
     for (auto o: argvo) {
@@ -816,37 +817,54 @@ void MainHandler::proc_exec_common(MsgContext &i) {
 
     // remove prefix, does not handle malformed ones
     // TODO: pass argv[0] and exec path to qine separately
-    const char *exec_path_cleaned = &buf[exec_path_o];
-    if (exec_path_cleaned[0] == '/' && exec_path_cleaned[1] == '/') {
-        exec_path_cleaned += 2;
-        while (isalnum(exec_path_cleaned[0]))
-            exec_path_cleaned++;
+    const char *exec_path = &buf[exec_path_o];
+    if (exec_path[0] == '/' && exec_path[1] == '/') {
+        exec_path += 2;
+        while (isalnum(exec_path[0]))
+            exec_path++;
     }
 
-    argvp[0] = exec_path_cleaned;
+    auto mapped_exec = i.proc().path_mapper().map_path_to_host(exec_path);
+    const char* final_exec;
 
-    // combine qine args and our args
     std::vector<const char*> final_argv;
-    for (const auto& a: i.ctx().proc()->self_call()) {
-        final_argv.push_back(a.c_str());
-    }
+    if (mapped_exec.exec_type() == PathMapper::Exec::HOST) {
+        final_exec = mapped_exec.host_path();
+        // just copy argv
+        final_argv = argvp;
 
-    
-    for (auto p: argvp) {
-        final_argv.push_back(p);
-    }
-    final_argv.push_back(nullptr);
+        // filter out __CWD and chdir there
+        for (auto it = envp.begin(); it != envp.end(); ++it) {
+            auto envvar = std::string_view(*it);
+            auto cwd_prefix = std::string_view("__CWD=");
+            if (starts_with(envvar, "__CWD=")) {
+                std::string cwd(envvar.substr(cwd_prefix.size()));
+                auto mapped = i.proc().path_mapper().map_path_to_host(cwd.c_str());
+                chdir(mapped.host_path());
+                it = envp.erase(it);
+                if (it == envp.end())
+                    break;
+            }
+        }
+    } else {
+        // combine qine args and our args
+        for (const auto& a: i.ctx().proc()->self_call()) {
+            final_argv.push_back(a.c_str());
+        }
+        final_argv.push_back("--exec");
+        final_argv.push_back(mapped_exec.host_path());
+        final_argv.push_back("--");
 
-    // force QNX_SLIB to env if it exists
-    const char *qnx_root = getenv("QNX_SLIB");
-    std::string root_env;
-    if (qnx_root) {
-        root_env = "QNX_SLIB=";
-        root_env.append(qnx_root);
-        envp.push_back(root_env.c_str());
+        for (auto p: argvp) {
+            final_argv.push_back(p);
+        }
+
+        // call qine
+        final_exec = final_argv[0];
     }
 
     envp.push_back(nullptr);
+    final_argv.push_back(nullptr);
 
     for (auto o: final_argv) {
         //printf("Arg: %s\n", o);
@@ -870,7 +888,7 @@ void MainHandler::proc_exec_common(MsgContext &i) {
         fcntl(fdi, F_SETFD, 0);
     }
 
-    execve(final_argv[0], const_cast<char**>(final_argv.data()), const_cast<char**>(envp.data()));
+    execve(final_exec, const_cast<char**>(final_argv.data()), const_cast<char**>(envp.data()));
 }
 
 void MainHandler::proc_timer_create(MsgContext &i) {
@@ -1222,18 +1240,20 @@ void MainHandler::io_stat(MsgContext& i) {
     i.msg().read_type(&msg);
     struct stat sb;
 
-    // TODO: handle trailing /
+    // TODO: handle trailing / (sent in eflags)
 
     auto p = i.proc().path_mapper().map_path_to_host(msg.m_path, true);
 
     QnxMsg::io::stat_reply reply;
-    memset(&reply, 0, sizeof(reply));
+    clear(&reply);
     int r;
+    
     if (msg.m_args.m_mode & Qnx::QS_IFLNK) {
         r = lstat(p.host_path(), &sb);
     } else {
         r = stat(p.host_path(), &sb);
     }
+    
     if (r < 0) {
         reply.m_status = Emu::map_errno(errno);
         i.msg().write_type(0, &reply);
@@ -1241,6 +1261,7 @@ void MainHandler::io_stat(MsgContext& i) {
     }
 
     transfer_stat(reply.m_stat, sb);
+    reply.m_status = Qnx::QEOK;
     i.msg().write_type(0, &reply);
 }
 

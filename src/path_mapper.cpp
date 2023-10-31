@@ -64,7 +64,7 @@ static std::string normalize_path(const char *path) {
 PathMapper::PathMapper() {
     m_root.m_host_path = "/";
     m_root.m_qnx_path = "/";
-    m_root.m_exec_qine = true;
+    m_root.m_exec = Exec::QNX;
 }
 
 PathMapper::~PathMapper() {
@@ -98,24 +98,36 @@ PathInfo PathInfo::mk_host_path(const char *path, bool normalized) {
 
 void PathMapper::add_map(const char *map_cmd_arg) {
     Prefix i;
+    std::string exec_arg;
     CommandOptions::parse(map_cmd_arg, {
         .core = {
             new CommandOptions::String(&i.m_qnx_path),
             new CommandOptions::String(&i.m_host_path),
+        },
+        .kwargs {
+            new CommandOptions::KwArg<CommandOptions::String>("exec", &exec_arg)
         }
     });
 
     i.m_qnx_path = normalize_path(i.m_qnx_path.c_str());
     i.m_host_path = normalize_path(i.m_host_path.c_str());
 
+    if (exec_arg == "") {
+        i.m_exec = i.m_qnx_path == "/" ? Exec::QNX : Exec::HOST;
+    } else if (exec_arg == "qnx") {
+        i.m_exec = Exec::QNX;
+    } else if (exec_arg == "host") {
+        i.m_exec = Exec::HOST;
+    } else {
+        throw ConfigurationError(std_printf("exec argument must be qnx or host"));
+    }
+
     if (i.m_qnx_path == "/") {
-        i.m_exec_qine = true;
         m_root = i;
     } else {
         if (has_qnx_prefix(i.m_qnx_path.c_str())) {
             throw ConfigurationError("duplicate QNX prefix mapping");
         }
-        i.m_exec_qine = false;
         m_prefixes.push_back(i);
     }
 }
@@ -151,6 +163,7 @@ void PathMapper::map_path_to_qnx(PathInfo &map) {
 
     if (pfx == nullptr) {
         map.m_qnx_valid = true;
+        map.m_prefix = nullptr;
         map.m_qnx_unmappable = true;
         map.m_qnx_path.clear();
         map.m_qnx_path.append("/unmapped");
@@ -165,6 +178,7 @@ void PathMapper::map_path_to_qnx(PathInfo &map) {
     map.m_qnx_unmappable = false;
     map.m_qnx_path.clear();
     map.m_qnx_path = Fsutil::change_prefix(pfx->m_host_path.c_str(), pfx->m_qnx_path.c_str(), map.m_host_path.c_str());
+    map.m_prefix = nullptr;
 
     Log::if_enabled(Log::MAP, [&](FILE *stream) {
         fprintf(stream, "Mapped host:%s -> qnx:%s (via %s)\n", map.host_path(), map.qnx_path(), pfx->m_qnx_path.c_str());
@@ -202,6 +216,7 @@ void PathMapper::map_path_to_host(PathInfo &map) {
     map.m_host_valid = true;
     map.m_host_path.clear();
     map.m_host_path = Fsutil::change_prefix(pfx->m_qnx_path.c_str(), pfx->m_host_path.c_str(), map.m_qnx_path.c_str());
+    map.m_prefix = pfx;
     Log::if_enabled(Log::MAP, [&](FILE *stream) {
         fprintf(stream, "Mapped qnx:%s -> host:%s (via %s)\n", map.qnx_path(), map.host_path(), pfx->m_qnx_path.c_str());
     });

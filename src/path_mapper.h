@@ -16,7 +16,7 @@ public:
 
     // runtime
 
-    /* Populate the m_qnx_path mapping in path info. Cannot fail, but will produce /unmapped/* path and set a flag.. */
+    /* Populate the m_qnx_path mapping in path info. Cannot fail, but will produce /unmapped/something path and set a flag.. */
     void map_path_to_qnx(PathInfo &map);
     PathInfo map_path_to_qnx(const char *path, bool normalized=false);
 
@@ -26,11 +26,15 @@ public:
 
     /* Populate the info. May fail. */
     void map_path(PathInfo &map);
+
+    enum class Exec {
+        QNX, HOST
+    };
 private:
     struct Prefix {
         std::string m_host_path;
         std::string m_qnx_path;
-        bool m_exec_qine;
+        Exec m_exec;
     };
     bool has_qnx_prefix(const std::string& pfx);
     Prefix m_root;
@@ -53,7 +57,7 @@ public:
 
     bool info_valid() const {return m_prefix; }
     const char* symlink_root() const {return m_prefix->m_host_path.c_str(); }
-    bool exec_qine() const {return m_prefix->m_exec_qine; }
+    PathMapper::Exec exec_type() const {return m_prefix->m_exec;}
 private:
     bool m_host_valid;
     std::string m_host_path;
