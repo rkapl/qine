@@ -465,7 +465,7 @@ void MainHandler::proc_slib_register(MsgContext &i) {
 
     fprintf(stderr, "Registering shared library %s, offset %x\n", msg.m_data.m_name, msg.m_offset);
     fprintf(stderr, "You can load the library for your program using:\n  --lib %s,sys,entry=0x%x\n",
-        i.proc().m_file_name.c_str(), msg.m_offset);
+        i.proc().m_executed_file.host_path(), msg.m_offset);
 
     i.msg().write_status(Qnx::QEOK);
 }
@@ -601,6 +601,7 @@ void MainHandler::proc_psinfo(MsgContext &i)
     if (msg.m_pid == i.proc().pid()) {
         auto proc = &i.proc();
         // known user: wlink tries to find its own exec (via _cmdname   )
+        
         // getsid pulls the sid from here
         i.msg().write_status(Qnx::QEOK);
         Qnx::psinfo ps;
@@ -625,7 +626,7 @@ void MainHandler::proc_psinfo(MsgContext &i)
         }
         ps.proc.father = proc->parent_pid();
 
-        qine_strlcpy(ps.proc.name, proc->file_name().c_str(), sizeof(ps.proc.name));
+        qine_strlcpy(ps.proc.name, proc->executed_file().qnx_path(), sizeof(ps.proc.name));
         i.msg().write_type(2, &ps);
     } else {
         // STUB
@@ -872,7 +873,7 @@ void MainHandler::proc_exec_common(MsgContext &i) {
     for (auto o: argvp) {
         //printf("Env %s\n", o);
     }
-    //printf("About to exec: %s\n", final_argv[0]);
+    // printf("About to exec: %s\n", final_exec);
 
     // redirect file descriptors
     for (size_t fdi = 0; fdi < 10; fdi++) {

@@ -16,6 +16,7 @@
 #include "emu.h"
 #include "main_handler.h"
 #include "msg_handler.h"
+#include "path_mapper.h"
 #include "qnx/magic.h"
 #include "qnx/procenv.h"
 #include "qnx/types.h"
@@ -69,7 +70,7 @@ public:
     void load_executable(const char *host_path);
     bool slib_loaded() const { return m_slib_entry != 0; }
     const std::vector<std::string>& self_call() const;
-    const std::string& file_name() const;
+    const PathInfo& executed_file() const;
 
     void set_errno(int v);
 
@@ -121,7 +122,7 @@ private:
     Qnx::Sigtab *m_sigtab;
 
     // Self info
-    std::string m_file_name;
+    PathInfo m_executed_file;
     std::vector<std::string> m_self_call;
 };
 

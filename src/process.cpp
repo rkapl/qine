@@ -13,6 +13,7 @@
 #include "loader.h"
 #include "msg/meta.h"
 #include "msg/dump.h"
+#include "path_mapper.h"
 #include "qnx/magic.h"
 #include "qnx/msg.h"
 #include "qnx/procenv.h"
@@ -63,11 +64,6 @@ void Process::initialize() {
 
 void Process::initialize_self_call(std::vector<std::string>&& self_call) {
     m_self_call = std::move(self_call);
-    m_file_name.resize(Qnx::QPATH_MAX_T);
-    if (!realpath(m_self_call[0].c_str(), m_file_name.data())) {
-        throw std::system_error(errno, std::system_category());
-    }
-    m_file_name.resize(strlen(m_file_name.data()));
 }
 
 void Process::initialize_pids() {
@@ -117,6 +113,11 @@ void Process::load_library(std::string_view load_arg) {
 
 void Process::load_executable(const char *path) {
     loader_load(path, &m_load_exec, false);
+    std::string realpath;
+    if (!Fsutil::realpath(path, realpath)) {
+        throw std::system_error(errno, std::system_category());
+    }
+    m_executed_file = path_mapper().map_path_to_qnx(realpath.c_str());
 }
 
 void Process::update_pids_after_fork(pid_t new_pid) {
@@ -143,8 +144,8 @@ Qnx::pid_t Process::nid() const
 {
     return 0x1;
 }
-const std::string& Process::file_name() const {
-    return m_file_name;
+const PathInfo& Process::executed_file() const {
+    return m_executed_file;
 }
 
 const std::vector<std::string>& Process::self_call() const {
@@ -372,7 +373,6 @@ void Process::setup_startup_context(int argc, char **argv)
     }
 
     /* Argv */
-    m_file_name = argv[0];
     ctx.push_stack(0);
     for (int i = argc - 1; i >= 0; i--) {
         alloc.push_string(argv[i]);
