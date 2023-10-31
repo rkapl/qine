@@ -572,3 +572,37 @@ msg sid_set {
     request session_request;
     reply session_reply;
 }
+
+struct sem {
+    semid: u16;
+    seg: u16 hex;
+    addr: u32 hex;
+    padd: u32;
+    padd: u32;
+}
+
+msg sem_init {
+    type: 0x2c;
+    subtype: 0;
+    request {
+        sem: sem;
+    }
+    reply {
+        status: u16;
+        zero: u16;
+        sem: sem;
+    }
+}
+
+msg sem_destroy {
+    type: 0x2c;
+    subtype: 1;
+    request {
+        sem: sem;
+    }
+    reply {
+        status: u16;
+        zero: u16;
+        sem: sem;
+    }
+}

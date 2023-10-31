@@ -37,6 +37,7 @@
 #include "qnx/osinfo.h"
 #include "qnx/procenv.h"
 #include "qnx/psinfo.h"
+#include "qnx/sem.h"
 #include "qnx/signal.h"
 #include "qnx/stat.h"
 #include "qnx/timers.h"
@@ -213,6 +214,16 @@ void MainHandler::receive_inner(MsgContext& i) {
                 break;
             default:
                 unhandled_msg();
+        }; break;
+        case QnxMsg::proc::msg_sem_init::TYPE: {
+            switch(hdr.subtype) {
+                case QnxMsg::proc::msg_sem_init::SUBTYPE:
+                    proc_sem_init(i);
+                break;
+                case QnxMsg::proc::msg_sem_destroy::SUBTYPE:
+                    proc_sem_destroy(i);
+                break;
+            }
         }; break;
 
         case QnxMsg::io::msg_handle::TYPE:
@@ -1064,6 +1075,21 @@ void MainHandler::proc_wait(MsgContext &i) {
     i.msg().write_type(0, &reply);
 }
 
+void MainHandler::proc_sem_init(MsgContext &i) {
+    QnxMsg::proc::sem_init_request msg;
+    i.msg().read_type(&msg);
+
+    msg.m_type = Qnx::QEOK;
+    // Just some marker value. We care only about the value.
+    msg.m_sem.m_semid = 711;
+    i.msg().write_type(0, &msg);
+}
+
+void MainHandler::proc_sem_destroy(MsgContext &i) {
+    // we did not allocate anything
+    i.msg().write_status(Qnx::QEOK);
+}
+
 uint32_t MainHandler::map_file_flags_to_host(uint32_t oflag) {
     uint32_t mapped_oflags = 0;
     auto acc = oflag & Qnx::QO_ACCMODE;
@@ -1157,6 +1183,7 @@ void MainHandler::io_chdir(MsgContext& i) {
 
     auto p = i.proc().path_mapper().map_path_to_host(msg.m_file, true);
 
+    // TODO: this is not the right check, it allows us to chdir into executables
     int r = access(p.host_path(), X_OK);
     if (r == 0) {
         i.msg().write_status(Qnx::QEOK);

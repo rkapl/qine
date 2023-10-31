@@ -4,7 +4,7 @@
 #include <cstring>
 #include <stdarg.h>
 
-uint64_t Log::m_enabled =  (Log::log_mask(Category::UNHANDLED));
+uint64_t Log::m_enabled = 0;
 
 void Log::print(Category c, const char *format, ...)  
 {

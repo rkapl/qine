@@ -13,6 +13,7 @@
 #include "qnx/errno.h"
 #include "qnx/magic.h"
 #include "qnx/procenv.h"
+#include "qnx/sem.h"
 #include "qnx/signal.h"
 #include "qnx/types.h"
 #include "qnx/msg.h"
@@ -105,10 +106,15 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
         handled = true;
     }
 
-    if (matches_syscall(ctx)) {
-        ctx.reg_eip() += 2;
+    int insn_len;
+    if (matches_syscall(ctx, 0xF2, &insn_len)) {
+        ctx.reg_eip() += insn_len;
         // note: syscall includes sysreturn which may change eip
         dispatch_syscall(ctx);
+        handled = true;
+    } else if (matches_syscall(ctx, 0xF1, &insn_len)) {
+        ctx.reg_eip() += insn_len;
+        dispatch_syscall_sem(ctx);
         handled = true;
     }
     
@@ -121,16 +127,19 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
     signal_tail(ctx);
 }
 
-bool Emu::matches_syscall(GuestContext &ctx) {
+bool Emu::matches_syscall(GuestContext &ctx, int int_nr, int* insn_len) {
+    *insn_len = 0;
     auto eip = ctx.reg_eip();
     auto b1 = ctx.read<uint8_t>(GuestContext::CS, eip);
     // prefix
     if (b1 == 0x66) {
         eip++;
+        (*insn_len) ++;
         b1 = ctx.read<uint8_t>(GuestContext::CS, eip);
     }
 
-    return b1 == 0xCD && ctx.read<uint8_t>(GuestContext::CS, eip + 1) == 0xF2;
+    (*insn_len) += 2;
+    return b1 == 0xCD && ctx.read<uint8_t>(GuestContext::CS, eip + 1) == int_nr;
 }
 
 qine_no_tls void Emu::static_handler_generic(int sig, siginfo_t *info, void *uctx) {
@@ -287,6 +296,39 @@ void Emu::dispatch_syscall(GuestContext& ctx)
     } catch (const SegmentationFault& e) {
         Log::print(Log::UNHANDLED, "Segfault during message handling: %s\n", e.what());
         ctx.set_syscall_error(Qnx::QEFAULT);
+    }
+}
+
+void Emu::dispatch_syscall_sem(GuestContext &ctx) {
+    auto sem_addr = ctx.reg_eax();
+    auto syscall = ctx.reg_ebx();
+    auto sem = reinterpret_cast<Qnx::sem_t*>(
+        ctx.proc()->translate_segmented(FarPointer(ctx.reg_ds(), sem_addr), sizeof(Qnx::sem_t), RwOp::WRITE)
+    );
+
+    // ASSUME: single-threaded
+    if (syscall == 0) {
+        // post
+        sem->value++;
+        ctx.set_syscall_ok();
+    } else if (syscall == 1) {
+        // wait
+        if (sem->value == 0) {
+            ctx.set_syscall_error(Qnx::QEDEADLK);
+        } else {
+            sem->value --;
+            ctx.set_syscall_ok();
+        }
+    } else if (syscall == 2) {
+        // try_again
+        if (sem->value == 0) {
+            ctx.set_syscall_error(Qnx::QEAGAIN);
+        } else {
+            ctx.set_syscall_ok();
+            sem->value--;
+        }
+    } else {
+        ctx.set_syscall_error(Qnx::QENOSYS);
     }
 }
 

@@ -42,6 +42,8 @@ private:
     void syscall_receivmx(GuestContext& ctx);
     void syscall_priority(GuestContext& ctx);
 
+    void dispatch_syscall_sem(GuestContext& ctx);
+
     void handler_segv(int sig, siginfo_t *info, void *uctx);
     void handle_guest_segv(GuestContext &ctx, siginfo_t *info);
     void handler_generic(int sig, siginfo_t *info, void *uctx);
@@ -55,7 +57,7 @@ private:
     static void static_handler_user(int sig, siginfo_t *info, void *uctx);
     static void static_handler_generic(int sig, siginfo_t *info, void *uctx);
 
-    static bool matches_syscall(GuestContext &ctx);
+    static bool matches_syscall(GuestContext &ctx, int int_nr, int *insn_len);
 
     TlsFixup m_tls_fixup;
 

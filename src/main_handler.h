@@ -65,6 +65,9 @@ private:
     void proc_timer_alarm(MsgContext &i);
     void proc_wait(MsgContext &i);
 
+    void proc_sem_init(MsgContext &i);
+    void proc_sem_destroy(MsgContext &i);
+
     void io_open(MsgContext &i);
     void io_chdir(MsgContext &i);
     void io_stat(MsgContext &i);
