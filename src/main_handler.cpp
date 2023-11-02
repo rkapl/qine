@@ -1865,8 +1865,13 @@ void MainHandler::fsys_pipe(MsgContext &i) {
         return;
     }
 
+    UniqueFd uq_host_fds[2] = {
+        UniqueFd(host_fds[0]),
+        UniqueFd(host_fds[1]),
+    };
+
     // now we must move the FDs to correct locations
-    if (!fds->assign_fds(2, qnx_fds, host_fds)) {
+    if (!fds->assign_fds(2, qnx_fds, uq_host_fds)) {
         i.msg().write_status(Emu::map_errno(errno));
         return;
     }

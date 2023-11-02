@@ -1,8 +1,11 @@
 #include "qnx_fd.h"
 #include "log.h"
+#include "unique_fd.h"
+#include <fcntl.h>
 #include <stdexcept>
 #include <iostream>
 #include <string.h>
+#include <system_error>
 #include <unistd.h>
 #include <unordered_map>
 
@@ -55,32 +58,32 @@ bool FdMap::qnx_fd_detach(Qnx::fd_t fd)
     return used;
 }
 
-bool FdMap::assign_fds(size_t count, QnxFd** to_fds, int *host_fds) {
+bool FdMap::assign_fds(size_t count, QnxFd** to_fds, UniqueFd *host_fds) {
     // first store where the host FDs live
     std::unordered_map<int, int> fd_to_index;
     for (size_t i = 0; i < count; i++) {
-        fd_to_index[host_fds[i]] = i;
-        Log::print(Log::FD, "opened fd %d using host fd %d\n", to_fds[i]->m_fd,  host_fds[i]);
+        fd_to_index[host_fds[i].get()] = i;
+        Log::print(Log::FD, "opened fd %d using host fd %d\n", to_fds[i]->m_fd,  host_fds[i].get());
     }
 
-    auto host_fd_moved = [&](int index, int to) {
-        int from = host_fds[index];
-        host_fds[index] = to;
-        Log::print(Log::FD, "moved host fd %d -> %d\n", from, to);
+    auto host_fd_moved = [&](int index, UniqueFd&& to) {
+        int from = host_fds[index].get();
+        host_fds[index] = std::move(to);
+        Log::print(Log::FD, "moved host fd %d -> %d\n", from, to.get());
         fd_to_index.erase(from);
-        ::close(from);
-        fd_to_index[to] = index;
+        fd_to_index[to.get()] = index;
     };
 
-    // Move the host_fd anywhere else (if it is opened by the host) and make sure host_fd is free
+    // Move the host_fd anywhere else (if it is opened by the host) and make sure host_fd is free (can be overwritten)
     auto realloc_fd = [&](int host_fd) -> bool {
         auto it = fd_to_index.find(host_fd);
         if (it != fd_to_index.end()) {
-            int r = dup(host_fd);
-            if (r < 0)
+            UniqueFd new_fd = dup(host_fd);
+            if (!new_fd.valid())
                 return false;
-            host_fd_moved(it->first, r);
+            host_fd_moved(it->first, std::move(new_fd));
         }
+        Log::print(Log::FD, "host FD %d free, no need to move existing FD\n", host_fd);
         return true;
     };
 
@@ -89,23 +92,33 @@ bool FdMap::assign_fds(size_t count, QnxFd** to_fds, int *host_fds) {
     // If the FD number is already taken, we dup it somewhere else temporarily.
     for (size_t i = 0; i < count; i++) {
         auto fd = to_fds[i];
-        if (fd->m_fd == host_fds[i]) {
-            fd->m_host_fd = fd->m_fd;
-            fd->m_open = true;
+        if (fd->m_fd == host_fds[i].get()) {
+            Log::print(Log::FD, "FD %d matches, moving on\n", fd->m_fd);
+            // move the ownership to our FD object
+            fd_to_index.erase(fd->m_host_fd);
             continue;
         }
 
         if (!realloc_fd(fd->m_fd))
             return false;
 
-        int r = dup2(host_fds[i], fd->m_fd);
-        if (r < 0)
+        UniqueFd new_fd(dup2(host_fds[i].get(), fd->m_fd));
+        if (!new_fd.valid())
             return false;
 
-        host_fd_moved(i, fd->m_fd);
-        fd->m_host_fd = fd->m_fd;
-        fd->m_open = true;
+        host_fd_moved(i, std::move(new_fd));
     }
+
+    // now move the ownership and finalize
+    for (size_t i = 0; i < count; i++) {
+        auto fd = to_fds[i];
+        fd->m_open = true;
+        fd->m_host_fd = host_fds[i].release();
+        int r = fcntl(fd->m_host_fd, F_SETFD, FD_CLOEXEC);
+        if (r < 0)
+            throw std::system_error(errno, std::system_category());
+    }
+
     return true;
 }
 
@@ -131,19 +144,25 @@ bool QnxFd::assign_fd(UniqueFd&& tmp_fd) {
     if (tmp_fd.get() != m_fd) {
         Log::print(Log::FD, "opened fd %d using host fd %d\n", m_fd,  tmp_fd.get());
         // move fd to final location
-        UniqueFd r(dup2(tmp_fd.get(), m_fd));
-        if (!r.valid()) {
+        UniqueFd new_fd(dup2(tmp_fd.get(), m_fd));
+        if (!new_fd.valid()) {
             Log::print(Log::FD, "failed to remap fd: %s\n", strerror(errno));
             return false;
         } else {
-            m_host_fd = r.release();
+            m_host_fd = new_fd.release();
             m_open = true;
+            int r = fcntl(m_host_fd, F_SETFD, FD_CLOEXEC);
+            if (r < 0)
+                throw std::system_error(errno, std::system_category());
             return true;
         }
     } else {
         Log::print(Log::FD, "opened fd %d\n", m_fd);
         m_host_fd = tmp_fd.release();
         m_open = true;
+        int r = fcntl(m_host_fd, F_SETFD, FD_CLOEXEC);
+        if (r < 0)
+            throw std::system_error(errno, std::system_category());
         return true;
     }
 }

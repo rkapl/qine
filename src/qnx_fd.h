@@ -39,9 +39,10 @@ class FdMap {
      * and changes their FD numbers to match the QNX to_fd FDs and fills in the
      * host FD numbers in the descriptors.
      * 
-     * errno if false. Always takes ownership of the host_fd.
+     * errno if false. 
+     * Moves out from host_fds, atomically. But the FD may be renumbered on failure (not atomic).
      */
-    bool assign_fds(size_t count, QnxFd** to_fd, int *host_fd);
+    bool assign_fds(size_t count, QnxFd** to_fds, UniqueFd *host_fds);
 
     // The rest of the function exist on QnxFd
   private:
