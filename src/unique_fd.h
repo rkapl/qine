@@ -15,6 +15,7 @@ public:
     inline UniqueFd& operator=(UniqueFd &&b);
     inline bool valid() const;
     inline int release();
+    inline void close();
     inline ~UniqueFd();
 private:
     int m_fd;
@@ -25,7 +26,7 @@ UniqueFd::UniqueFd(UniqueFd &&b): m_fd(b.release()) {
 
 UniqueFd& UniqueFd::operator=(UniqueFd &&b)
 {
-    release();
+    close();
     m_fd = b.release();
     return *this;
 }
@@ -40,6 +41,13 @@ int UniqueFd::release() {
     return old;
 }
 
+void UniqueFd::close() {
+    if (m_fd > 0) {
+        ::close(m_fd);
+        m_fd = -1;
+    }
+}
+
 UniqueFd::~UniqueFd() {
-    release();
+    close();
 }
