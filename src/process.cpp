@@ -4,6 +4,7 @@
 #include <sys/ucontext.h>
 #include <system_error>
 #include <unistd.h>
+#include <fcntl.h>
 #include <vector>
 
 #include "gen_msg/dev.h"
@@ -103,7 +104,13 @@ void Process::load_library(std::string_view load_arg) {
     }
 
     LoadInfo li;
-    loader_load(lib.c_str(), &li, true);
+    Log::print(Log::LOADER, "loading library %s\n", lib.c_str());
+    UniqueFd fd(open(lib.c_str(), O_RDONLY));
+    if (!fd.valid()) {
+        perror("loader open");
+        throw LoaderFormatException("Failed to open library for loading");
+    }
+    loader_load(fd.get(), &li, true);
 
     if (slib) {
         m_slib_entry = entry;
@@ -111,10 +118,32 @@ void Process::load_library(std::string_view load_arg) {
     }
 }
 
-void Process::load_executable(const char *path) {
-    loader_load(path, &m_load_exec, false);
+void Process::load_executable(const PathInfo &path) {
+    const PathInfo *current_path = &path;
+
+    Log::print(Log::LOADER, "loading executable %s\n", path.host_path());
+    UniqueFd fd(open(path.host_path(), O_RDONLY));
+    if (!fd.valid()) {
+        perror("loader open");
+        throw LoaderFormatException("Failed to open executable for loading");
+    }
+
+    loader_check_interpreter(fd.get(), &m_interpreter_info);
+    if (m_interpreter_info.has_interpreter) {
+        m_interpreter_info.original_executable = path;
+        path_mapper().map_path_to_host(m_interpreter_info.interpreter);
+        Log::print(Log::LOADER, "loading interpreter %s\n", m_interpreter_info.interpreter.host_path());
+        current_path = &m_interpreter_info.interpreter;
+    }
+
+    fd = UniqueFd(open(current_path->host_path(), O_RDONLY));
+        if (!fd.valid()) {
+        perror("interpreter open");
+        throw LoaderFormatException("Failed to open interpreter for loading");
+    }
+    loader_load(fd.get(), &m_load_exec, false);
     std::string realpath;
-    if (!Fsutil::realpath(path, realpath)) {
+    if (!Fsutil::realpath(current_path->host_path(), realpath)) {
         throw std::system_error(errno, std::system_category());
     }
     m_executed_file = path_mapper().map_path_to_qnx(realpath.c_str());
@@ -372,15 +401,28 @@ void Process::setup_startup_context(int argc, char **argv)
         push_env(*e);
     }
 
-    /* Argv */
+    /* Argv in reverse order*/
     ctx.push_stack(0);
-    for (int i = argc - 1; i >= 0; i--) {
-        alloc.push_string(argv[i]);
+    int final_argc = 0;
+    auto push_arg = [&](const char *arg) {
+        final_argc++;
+        alloc.push_string(arg);
         ctx.push_stack(alloc.offset());
+    };
+    for (int i = argc - 1; i > 0; i--) {
+        push_arg(argv[i]);
+    }
+    if (!m_interpreter_info.has_interpreter) {
+        push_arg(argv[0]);
+    } else {
+        if (!m_interpreter_info.interpreter_args.empty())
+            push_arg(m_interpreter_info.interpreter_args.c_str());
+        push_arg(m_interpreter_info.original_executable.qnx_path());
+        push_arg(m_interpreter_info.interpreter.qnx_path());
     }
 
     /* Argc */
-    ctx.push_stack(argc);
+    ctx.push_stack(final_argc);
 
     /* Entry points*/
     if (!slib_loaded()) {

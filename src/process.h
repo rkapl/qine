@@ -32,10 +32,6 @@
 class Segment;
 class MsgContext;
 
-class CwdTooLong: public std::runtime_error {
-public:
-    CwdTooLong(): std::runtime_error("working directory path too long for QNX") {}
-};
 
 /* Represents the currently running process, a singleton */
 class Process{
@@ -67,7 +63,8 @@ public:
     Qnx::nid_t nid() const;
 
     void load_library(std::string_view load_arg);
-    void load_executable(const char *host_path);
+    // Path must be resolved in both host & qnx
+    void load_executable(const PathInfo& path);
     bool slib_loaded() const { return m_slib_entry != 0; }
     const std::vector<std::string>& self_call() const;
     const PathInfo& executed_file() const;
@@ -92,6 +89,7 @@ private:
     ucontext_t m_startup_context_main;
     ExtraContext m_startup_context_extra;
     GuestContext m_startup_context;
+    InterpreterInfo m_interpreter_info;
     LoadInfo m_load_exec;
     LoadInfo m_load_slib;
     uint32_t m_slib_entry;

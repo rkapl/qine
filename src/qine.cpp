@@ -129,16 +129,17 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    std::string exec;
+    PathInfo exec_path;
     if (!opt_exec.empty()) {
-        exec = opt_exec.c_str();
+        exec_path = proc->path_mapper().map_path_to_qnx(opt_exec.c_str());
     } else if (Fsutil::is_abs(argv[0])) {
-        auto exec_path = proc->path_mapper().map_path_to_host(argv[0]);
-        exec = exec_path.host_path();
+        exec_path = proc->path_mapper().map_path_to_host(argv[0]);
     } else {
-        exec = argv[0];
+        std::string abspath;
+        Fsutil::realpath(argv[0], abspath);
+        exec_path = proc->path_mapper().map_path_to_qnx(abspath.c_str());
     }
-    proc->load_executable(exec.c_str());
+    proc->load_executable(exec_path);
     proc->setup_startup_context(argc, argv);
 
     proc->enter_emu();

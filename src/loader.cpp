@@ -23,11 +23,6 @@
 static_assert(sizeof(lmf_header) == 48, "lmf_header size mimsatch");
 static_assert(sizeof(lmf_record) == 6, "lmf_record size mismatch");
 
-class LoaderFormatException: public std::runtime_error {
-public:
-    LoaderFormatException(const char *description): std::runtime_error(description) {}
-};
-
 static  void panic(const char* error) {
     throw LoaderFormatException(error);
 }
@@ -256,19 +251,12 @@ static void checked_read(const char* operation, int fd, void *dst, size_t size) 
 // see watcom, https://github.com/open-watcom/open-watcom-v2/blob/893cbe8abcc479e75fe8e1517dd23817b0317ca4/bld/wl/c/loadqnx.c#L95
 // see https://github.com/radareorg/radare2/issues/12664
 
-void loader_load(const char* path, LoadInfo *info_out, bool slib) {
-    Log::print(Log::LOADER, "loading %s\n", path);
-    auto fd = UniqueFd(open(path, O_CLOEXEC | O_RDONLY));
+void loader_load(int fd, LoadInfo *info_out, bool slib) {
     auto proc = Process::current();
-
-    if (!fd.valid()) {
-        perror("loader: open");
-        exit(1);
-    }
 
     // read and check header
     lmf_header_with_record hdr;
-    checked_read("loader: read header", fd.get(), reinterpret_cast<void*>(&hdr), sizeof(hdr));
+    checked_read("loader: read header", fd, reinterpret_cast<void*>(&hdr), sizeof(hdr));
 
     if (hdr.record.data_nbytes < sizeof(hdr.header)) {
         panic("loader: declared header size too small");
@@ -313,7 +301,7 @@ void loader_load(const char* path, LoadInfo *info_out, bool slib) {
     segment_types.resize(segment_count);
     for (uint32_t si = 0;  si < segment_count; ++si) {
         uint32_t seg_data;
-        checked_read("loader: read segments", fd.get(), reinterpret_cast<void*>(&seg_data), sizeof(seg_data));
+        checked_read("loader: read segments", fd, reinterpret_cast<void*>(&seg_data), sizeof(seg_data));
 
         uint32_t size = seg_data & 0x0FFFFFFFu;
         uint32_t type = seg_data >> 28;
@@ -328,7 +316,7 @@ void loader_load(const char* path, LoadInfo *info_out, bool slib) {
     rec.rec_type = LMF_HEADER_REC;
     bool rw_state = true;
     while (rec.rec_type != LMF_IMAGE_END_REC) {
-        checked_read("loader: read record", fd.get(), reinterpret_cast<void*>(&rec), sizeof(rec));
+        checked_read("loader: read record", fd, reinterpret_cast<void*>(&rec), sizeof(rec));
         // printf("record type=%x, len=%x\n", rec.rec_type, rec.data_nbytes);
 
         bool need_skip = true;
@@ -344,22 +332,22 @@ void loader_load(const char* path, LoadInfo *info_out, bool slib) {
             if (rec.data_nbytes < sizeof(ld)) {
                 panic("loader: data: record too short");
             }
-            checked_read("loader: read data header", fd.get(), reinterpret_cast<void*>(&ld), sizeof(ld));
+            checked_read("loader: read data header", fd, reinterpret_cast<void*>(&ld), sizeof(ld));
             
             uint32_t data_size = rec.data_nbytes - sizeof(ld);
 
-            off_t offset = lseek(fd.get(), 0, SEEK_CUR);
+            off_t offset = lseek(fd, 0, SEEK_CUR);
             if (offset < 0) {
                 panic("loader: cannot tell file position\n");
             }
             Log::print(Log::LOADER, "load data: segment=0x%x, offset=0x%x, file=0x%lx, size=0x%x\n", ld.segment, ld.offset, offset, data_size);
             void *dst = loader->prepare_segment_load(ld, offset, data_size);
-            checked_read("loader: load data", fd.get(), dst, data_size);
+            checked_read("loader: load data", fd, dst, data_size);
             need_skip = false;
         }
 
         if (need_skip) {
-            if (lseek(fd.get(), rec.data_nbytes, SEEK_CUR) < 0) {
+            if (lseek(fd, rec.data_nbytes, SEEK_CUR) < 0) {
                 perror("loader: skip record");
                 exit(1);
             }
@@ -386,4 +374,58 @@ void loader_load(const char* path, LoadInfo *info_out, bool slib) {
 
         // Argv index ignore for now. I guess it would be important for some 16-bit executables.
     }
+}
+
+
+// if there is shebang, put the interpreter in info_out
+// if any error occurs, it is ok, but the info is not filled in
+void loader_check_interpreter(int fd, InterpreterInfo *interp_out) {
+    // check for shebang
+    char shebang[2];
+    int r = read(fd, reinterpret_cast<void*>(shebang), sizeof(shebang));
+    if (r < 0) {
+        return;
+    } else if (r < sizeof(shebang)) {
+        return;
+    }
+
+    if (!(shebang[0] == '#' && shebang[1] == '!')) {
+        return;
+    }
+
+    constexpr int interp_buf_size = 1024;
+    std::unique_ptr<char[]> interp_buf(new char[interp_buf_size]);
+    r = read(fd, interp_buf.get(), interp_buf_size - 1);
+    if (r < 0) {
+        return;
+    }
+    interp_buf[r] = 0;
+
+    // skip to the interpreter
+    char *c = interp_buf.get();
+    while (isspace(*c) && *c != 0)
+        c++;
+
+    // read the interpreter body
+    const char *interp_start = c;
+    while(!isspace(*c) && *c != 0)
+        c++;
+    
+    // skip to the args and insert separator
+    const char *interp_end = c;
+    while (isspace(*c) && *c != 0) {
+        *c = 0;
+        c++;
+    }
+
+    // skip to the end
+    const char *args_start = c;
+    while (isspace(*c) && *c != 0)
+        c++;
+
+    // we inserted the null terminator
+    interp_out->interpreter = PathInfo::mk_qnx_path(interp_start);
+    interp_out->interpreter_args.clear();
+    interp_out->interpreter_args.append(args_start, c - args_start);
+    interp_out->has_interpreter = true;
 }
