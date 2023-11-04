@@ -106,6 +106,7 @@ void GuestContext::dump(FILE *s, size_t stack) {
     auto cwd = read_string(user_ptr(m->cwd));
     auto root = read_string(user_ptr(m->root_prefix));
     
+    fprintf(s, "exec=%s\n", m_proc->executed_file().qnx_path());
     fprintf(s, "cwd=%s, root=%s, pid=%d, ppid=%d, nid=%d\n", 
         cwd.c_str(), root.c_str(),
         m->my_pid, m->dads_pid, m->my_nid

@@ -128,7 +128,7 @@ void MainHandler::receive_inner(MsgContext& i) {
                     proc_fd_query(i);
                 break;
                 case QnxMsg::proc::msg_fd_action1::SUBTYPE:
-                    proc_fd_action1(i);
+                    proc_fd_setfd(i);
                     break;
                 default:
                     unhandled_msg();
@@ -457,7 +457,7 @@ void MainHandler::proc_fd_query(MsgContext& i) {
         reply.m_info.m_pid = fd->m_pid;
         reply.m_info.m_vid = fd->m_vid;
         reply.m_info.m_nid = fd->m_nid;
-        reply.m_info.m_flags = fd->m_flags;
+        reply.m_info.m_flags = fd->m_flags << 8;
         reply.m_fd = fd->m_fd;
     } else {
         reply.m_status = Qnx::QEINVAL;
@@ -465,8 +465,19 @@ void MainHandler::proc_fd_query(MsgContext& i) {
     i.msg().write_type(0, &reply);
 }
 
-void MainHandler::proc_fd_action1(MsgContext &i) {
-    // STUB, not sure what this is
+void MainHandler::proc_fd_setfd(MsgContext &i) {
+    QnxMsg::proc::fd_request msg;
+    i.msg().read_type(&msg);
+
+    auto fd = i.proc().fds().get_attached_fd(msg.m_fd);
+    if (fd->m_open) {
+        int r = fcntl(fd->m_host_fd, F_SETFD, msg.m_flags ? FD_CLOEXEC : 0);
+        if (r < 0) {
+            i.msg().write_status(Emu::map_errno(errno));
+            return;
+        }
+    }
+    fd->m_flags = msg.m_flags;
     i.msg().write_status(Qnx::QEOK);
 }
 
@@ -1156,14 +1167,9 @@ void MainHandler::io_open(MsgContext& i) {
         }
     }
 
-    if (fd->is_close_on_exec()) {
-        mapped_oflags |= O_CLOEXEC;
-    }
-
     fd->m_path = PathInfo::mk_qnx_path(msg.m_file, true);
     i.proc().path_mapper().map_path_to_host(fd->m_path);
     
-    // TODO: handle cloexec and flags
     UniqueFd tmp_fd(::open(fd->m_path.host_path(), mapped_oflags, msg.m_open.m_mode));
     if (!tmp_fd.valid()) {
         i.msg().write_status(Emu::map_errno(errno));
@@ -1525,8 +1531,7 @@ void MainHandler::io_fcntl_flags(MsgContext &i) {
     i.msg().read_type(&msg);
 
     QnxMsg::io::fcntl_flags_reply reply;
-    memset(&msg, 0, sizeof(reply));
-
+    memset(&reply, 0, sizeof(reply));
     int r = fcntl(i.map_fd(msg.m_fd), F_GETFL);
     if (r < 0) {
         reply.m_status = Emu::map_errno(errno);
@@ -1599,11 +1604,13 @@ void MainHandler::io_dup(MsgContext &i) {
     if (dst_fd->m_open) 
         dst_fd->close();
 
-    int r = dup2(src_fd->m_host_fd, dst_fd->m_fd);
-    if (r < 0) {
+    Log::print(Log::FD, "fd dup %d -> %d\n", msg.m_src_fd, msg.m_dst_fd);
+    UniqueFd new_fd = dup2(src_fd->m_host_fd, dst_fd->m_fd);
+    if (!new_fd.valid()) {
         /* Yes, we are at inconsitent state, but it should not really happen if replacing a FD */
         i.msg().write_status(Emu::map_errno(errno));
     } else {
+        dst_fd->assign_fd(std::move(new_fd));
         dst_fd->m_host_fd = msg.m_dst_fd;
         i.msg().write_status(Qnx::QEOK);
     }

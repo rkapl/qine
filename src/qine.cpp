@@ -57,6 +57,7 @@ int main(int argc, char **argv) {
     setvbuf(stderr, nullptr, _IOLBF, 256);
     auto proc = Process::create();
 
+    // we only want to set debugs settings and maps during init, then do the rest
     std::vector<std::function<void()>> delayed_args;
     std::string opt_exec;
 
@@ -97,6 +98,7 @@ int main(int argc, char **argv) {
             }
         }
 
+        proc->initialize_2();
         for (auto d: delayed_args)
             d();
 

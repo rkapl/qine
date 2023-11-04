@@ -43,7 +43,7 @@ private:
     void proc_fd_attach(MsgContext &i);
     void proc_fd_detach(MsgContext &i);
     void proc_fd_query(MsgContext &i);
-    void proc_fd_action1(MsgContext &i);
+    void proc_fd_setfd(MsgContext &i);
     void proc_vc_detach(MsgContext &i);
     void proc_vc_attach(MsgContext &i);
     void proc_psinfo(MsgContext &i);

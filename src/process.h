@@ -41,6 +41,7 @@ class Process{
 public:
     static inline Process* current();
     static Process* create();
+    void initialize_2();
     void initialize_self_call(std::vector<std::string>&& self_call);
 
     void update_pids_after_fork(pid_t new_pid);

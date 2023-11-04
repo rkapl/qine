@@ -34,6 +34,7 @@ void FdMap::scan_host_fds(Qnx::nid_t nid, Qnx::pid_t pid, Qnx::pid_t vid) {
         auto fdi = m_fds.alloc_exactly_at(fd, [=] (int fd) { return new QnxFd(fd, nid, pid, vid, 0);});
         fdi->m_open = true;
         fdi->m_host_fd = fdi->m_fd;
+        Log::print(Log::FD, "inherited fd %d\n", fd);
     }
 
     closedir(fd_dir);
@@ -63,7 +64,7 @@ bool FdMap::assign_fds(size_t count, QnxFd** to_fds, UniqueFd *host_fds) {
     std::unordered_map<int, int> fd_to_index;
     for (size_t i = 0; i < count; i++) {
         fd_to_index[host_fds[i].get()] = i;
-        Log::print(Log::FD, "opened fd %d using host fd %d\n", to_fds[i]->m_fd,  host_fds[i].get());
+        Log::print(Log::FD, "assigned fd %d using host fd %d\n", to_fds[i]->m_fd,  host_fds[i].get());
     }
 
     auto host_fd_moved = [&](int index, UniqueFd&& to) {
@@ -114,9 +115,11 @@ bool FdMap::assign_fds(size_t count, QnxFd** to_fds, UniqueFd *host_fds) {
         auto fd = to_fds[i];
         fd->m_open = true;
         fd->m_host_fd = host_fds[i].release();
-        int r = fcntl(fd->m_host_fd, F_SETFD, FD_CLOEXEC);
-        if (r < 0)
-            throw std::system_error(errno, std::system_category());
+        if (fd->is_close_on_exec()) {
+            int r = fcntl(fd->m_host_fd, F_SETFD, FD_CLOEXEC);
+            if (r < 0)
+                throw std::system_error(errno, std::system_category());
+        }
     }
 
     return true;
@@ -139,36 +142,34 @@ bool QnxFd::is_close_on_exec() {
 }
 
 bool QnxFd::assign_fd(UniqueFd&& tmp_fd) {
-    // TODO: handle CLOEXEC here? Now it is a mess. And we need it for dup, open, pipe etc.
     assert(!m_open);
+    UniqueFd final_fd;
     if (tmp_fd.get() != m_fd) {
-        Log::print(Log::FD, "opened fd %d using host fd %d\n", m_fd,  tmp_fd.get());
+        Log::print(Log::FD, "assigned fd %d using host fd %d\n", m_fd,  tmp_fd.get());
         // move fd to final location
-        UniqueFd new_fd(dup2(tmp_fd.get(), m_fd));
-        if (!new_fd.valid()) {
+        final_fd = UniqueFd(dup2(tmp_fd.get(), m_fd));
+        if (!final_fd.valid()) {
             Log::print(Log::FD, "failed to remap fd: %s\n", strerror(errno));
             return false;
-        } else {
-            m_host_fd = new_fd.release();
-            m_open = true;
-            int r = fcntl(m_host_fd, F_SETFD, FD_CLOEXEC);
-            if (r < 0)
-                throw std::system_error(errno, std::system_category());
-            return true;
         }
     } else {
-        Log::print(Log::FD, "opened fd %d\n", m_fd);
-        m_host_fd = tmp_fd.release();
-        m_open = true;
+        Log::print(Log::FD, "assigned fd %d\n", m_fd);
+        final_fd = std::move(tmp_fd);
+    }
+
+    m_host_fd = final_fd.release();
+    m_open = true;
+    if (is_close_on_exec()) {
         int r = fcntl(m_host_fd, F_SETFD, FD_CLOEXEC);
         if (r < 0)
             throw std::system_error(errno, std::system_category());
-        return true;
     }
+    return true;
 }
 
 bool QnxFd::close() {
     assert(m_open);
+    Log::print(Log::FD, "fd %d close\n", m_fd);
     int r;
     if (m_host_dir) {
         r = closedir(m_host_dir);
@@ -182,8 +183,10 @@ bool QnxFd::close() {
 }
 
 void QnxFd::check_open() {
-    if (!m_open)
+    if (!m_open) {
+        Log::print(Log::FD, "fd %d not open\n", m_fd);
         throw BadFdException();
+    }
 }
 
 bool QnxFd::prepare_dir() {

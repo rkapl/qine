@@ -57,9 +57,11 @@ void Process::initialize() {
     m_startup_context = GuestContext(&m_startup_context_main, &m_startup_context_extra);
     memset(&m_startup_context_main, 0xcc, sizeof(m_startup_context_main));
     memset(&m_startup_context_extra, 0xcc, sizeof(m_startup_context_extra));
+}
+
+void Process::initialize_2() {
     m_emu.init();
     m_fds.scan_host_fds(m_current->nid(), 1, 1);
-
     initialize_pids();
 }
 
