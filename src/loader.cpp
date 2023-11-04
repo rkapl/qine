@@ -107,7 +107,7 @@ void FlatLoader::finalize_segments() {
     m_skip = m_image_base - m_stack;
 
     m_mem = Process::current()->allocate_segment();
-    m_mem->reserve(MemOps::mega(256));
+    m_mem->reserve(MemOps::mega(512));
 
     // Guard page(s) before stack
     m_mem->skip(m_skip);
