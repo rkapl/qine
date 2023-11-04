@@ -850,6 +850,12 @@ void MainHandler::proc_exec_common(MsgContext &i) {
     auto mapped_exec = i.proc().path_mapper().map_path_to_host(exec_path);
     const char* final_exec;
 
+    // Theoretically, we should also check the interpreter, format etc. and report any problem
+    // before really exec'ing into qine. But this at least let's path work.
+    if (access(mapped_exec.host_path(), X_OK) < 0) {
+        return;
+    }
+
     std::vector<const char*> final_argv;
     if (mapped_exec.exec_type() == PathMapper::Exec::HOST) {
         final_exec = mapped_exec.host_path();
