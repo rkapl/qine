@@ -279,3 +279,26 @@ msg qioctl {
           padd: u32;
      }
 }
+
+struct lock {
+     fd: fd;
+     cmd: u16;
+     type: u16;
+     whence: u16;
+     start: i32;
+     len: u32;
+     pid: pid;
+     padd: u16;
+}
+
+msg lock {
+     type: 0x010F;
+
+     request {
+          lock: lock;
+     }
+     reply {
+          status: u16;
+          lock: lock;
+     }
+}

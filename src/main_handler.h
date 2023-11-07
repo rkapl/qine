@@ -87,6 +87,7 @@ private:
     void io_utime(MsgContext &i);
     void io_ioctl(MsgContext &i);
     void io_qioctl(MsgContext &i);
+    void io_lock(MsgContext &i);
 
     void fsys_unlink(MsgContext &i);
     void fsys_mkspecial(MsgContext &i);

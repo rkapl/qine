@@ -33,6 +33,7 @@
 #include "main_handler.h"
 #include "qnx/errno.h"
 #include "qnx/io.h"
+#include "qnx/lock.h"
 #include "qnx/msg.h"
 #include "qnx/osinfo.h"
 #include "qnx/procenv.h"
@@ -283,6 +284,9 @@ void MainHandler::receive_inner(MsgContext& i) {
             break;
         case QnxMsg::io::msg_qioctl::TYPE:
             io_qioctl(i);
+            break;
+        case QnxMsg::io::msg_lock::TYPE:
+            io_lock(i);
             break;
 
         case QnxMsg::fsys::msg_unlink::TYPE:
@@ -1403,6 +1407,87 @@ void MainHandler::io_ioctl(MsgContext &i) {
     i.msg().read_type(&msg);
 
     i.msg().write_status(Qnx::QENOSYS);
+}
+
+void MainHandler::io_lock(MsgContext &i) {
+    QnxMsg::io::lock_request msg;
+    i.msg().read_type(&msg);
+
+    
+    int host_fd = i.map_fd(msg.m_lock.m_fd);
+    flock host_lock;
+    host_lock.l_len = msg.m_lock.m_len;
+    host_lock.l_start = msg.m_lock.m_start;
+    host_lock.l_whence = msg.m_lock.m_whence;
+    host_lock.l_pid = 0;
+    host_lock.l_type = 0;
+
+    switch (msg.m_lock.m_type) {
+        case Qnx::QF_RDLCK:
+            host_lock.l_type = F_RDLCK;
+            break;
+        case Qnx::QF_WRLCK:
+            host_lock.l_type = F_WRLCK;
+            break;
+        case Qnx::QF_UNLCK:
+            host_lock.l_type = F_UNLCK;
+            break;
+    }
+
+    int host_cmd = 0;
+    switch (msg.m_lock.m_cmd) {
+        case Qnx::QF_SETLK:
+            host_cmd = F_SETLK;
+            break;
+        case Qnx::QF_SETLKW:
+            host_cmd = F_SETLKW;
+            break;
+        case Qnx::QF_GETLK:
+            host_cmd = F_GETLK;
+            break;
+        default:
+            i.msg().write_status(Qnx::QEINVAL);
+            Log::print(Log::UNHANDLED, "lock command %d unahdnled\n", msg.m_lock.m_cmd);
+            return;
+    }
+
+    int r = fcntl(host_fd, host_cmd, &host_lock);
+    if (r < 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+        return;
+    }
+
+    QnxMsg::io::lock_reply reply;
+    clear(&reply);
+    reply.m_status = Qnx::QEOK;
+    reply.m_lock.m_cmd = msg.m_lock.m_cmd;
+    reply.m_lock.m_fd = msg.m_lock.m_fd;
+    if (host_lock.l_start >= std::numeric_limits<int32_t>::max() || host_lock.l_len >= std::numeric_limits<int32_t>::max()) {
+        i.msg().write_status(Qnx::QERANGE);
+        return;
+    }
+    reply.m_lock.m_start = host_lock.l_start;
+    reply.m_lock.m_len = host_lock.l_len;
+    auto qnx_pid = i.proc().pids().host(host_lock.l_pid);
+    if (qnx_pid) {
+        reply.m_lock.m_pid = qnx_pid->qnx_pid();
+    } else {
+        reply.m_lock.m_pid = QnxPid::PID_UNKNOWN;
+    }
+    reply.m_lock.m_whence = SEEK_SET;
+    switch (host_lock.l_type) {
+    case F_RDLCK:
+        reply.m_lock.m_type = Qnx::QF_RDLCK;
+        break;
+    case F_WRLCK:
+        reply.m_lock.m_type = Qnx::QF_WRLCK;
+        break;
+    default:
+    case F_UNLCK:
+        reply.m_lock.m_type = Qnx::QF_UNLCK;
+        break;
+    }
+    i.msg().write_type(0, &reply);
 }
 
 void MainHandler::transfer_stat(QnxMsg::io::stat& dst, struct stat& src) {
