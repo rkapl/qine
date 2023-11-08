@@ -1,0 +1,17 @@
+pkgname='qine'
+pkgver=1
+pkgrel=1
+makedepends=('cmake' 'python-lark-parser')
+source=("qine-${pkgver}.tar.xz")
+md5sums=('SKIP')
+arch=('any')
+
+build() {
+    cmake -B build -S "$pkgname-$pkgver"
+    cmake --build build
+}
+
+package() {
+    install -d "${pkgdir}/usr/bin"
+    install "${srcdir}/build/qine" "${pkgdir}/usr/bin"
+}
