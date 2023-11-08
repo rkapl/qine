@@ -1,4 +1,7 @@
-cmake_minimum_required(VERSION 3.1...3.27)
+cmake_minimum_required(VERSION 3.19...3.27)
+
+find_package(Python3 3.9 COMPONENTS Interpreter)
+message("Using Python ${Python3_EXECUTABLE}")
 
 project(
   quine
@@ -48,7 +51,7 @@ set_property(SOURCE src/emu.cpp APPEND PROPERTY COMPILE_FLAGS -fno-stack-protect
 
 add_custom_command(
   OUTPUT ${MSG_SRC} ${MSG_H}
-  COMMAND ${PROJECT_SOURCE_DIR}/msg/gen.py -d ${PROJECT_BINARY_DIR}/gen_msg ${MSG_DEFS}
+  COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/msg/gen.py -d ${PROJECT_BINARY_DIR}/gen_msg ${MSG_DEFS}
   DEPENDS ${MSG_DEFS} msg/gen.py msg/qmsg.lark
 )
 
