@@ -60,3 +60,5 @@ set_target_properties(qine PROPERTIES CXX_EXTENSIONS OFF)
 # We are runnign on x86 and it make sense for accessing msg member
 set_target_properties(qine PROPERTIES COMPILE_FLAGS -Wno-address-of-packed-member)
 #set_target_properties(qine PROPERTIES LINK_FLAGS -m32)
+
+install(TARGETS qine)
