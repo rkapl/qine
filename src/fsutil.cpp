@@ -1,5 +1,7 @@
 #include "fsutil.h"
+#include "log.h"
 
+#include <system_error>
 #include <unistd.h>
 #include <assert.h>
 #include <string.h>
@@ -89,6 +91,15 @@ std::string change_prefix(const char* prefix, const char *new_prefix, const char
         acc.append(common);
     }
     return acc;
+}
+
+std::string proc_main_exe() {
+    std::string exe;
+    if (!readlink("/proc/self/exe", exe)) {
+        Log::print(Log::LOADER, "cannot get current executable name from /proc/self/exe\n");
+        throw std::system_error(errno, std::system_category());
+    }
+    return exe;
 }
 
 }

@@ -22,6 +22,7 @@ namespace Fsutil {
     bool realpath(const char* path, std::string& dst);
     bool readlink(const char *path, std::string& dst);
     bool ttyname(int fd, std::string& dst);
+    std::string proc_main_exe();
     std::string getcwd();
 
 }

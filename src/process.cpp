@@ -67,6 +67,7 @@ void Process::initialize_2() {
 
 void Process::initialize_self_call(std::vector<std::string>&& self_call) {
     m_self_call = std::move(self_call);
+    m_self_call[0] = Fsutil::proc_main_exe();
 }
 
 void Process::initialize_pids() {
