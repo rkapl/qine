@@ -4,7 +4,7 @@ It allows you to run QNX4 binaries on your Linux machine (like Wine). At least s
 
 
 ## Demo
-[![asciicast](https://asciinema.org/a/msEDHD8S6WESRpJM3LV1DOWPo.svg)](https://asciinema.org/a/msEDHD8S6WESRpJM3LV1DOWPo)
+[![asciicast](https://asciinema.org/a/msEDHD8S6WESRpJM3LV1DOWPo.svg)](https://asciinema.org/a/620602?autoplay=1)
 
 ## Usage
 
