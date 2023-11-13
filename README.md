@@ -1,6 +1,6 @@
-# Qine Is Not Emulator
+# Qine Is Not Emulator for QNX4
 
-In particular, it is not an emulator for QNX4. It allows you to run QNX4 binaries on your Linux machine (like Wine). At least some of them.
+It allows you to run QNX4 binaries on your Linux machine (like Wine). At least some of them.
 
 
 ## Demo
@@ -8,18 +8,18 @@ In particular, it is not an emulator for QNX4. It allows you to run QNX4 binarie
 
 ## Usage
 
-To run Qine binaries, you will need a QNX root file system. At minimum, you will need the QNX system library, `Slib32`. But if you want to run shell, you will want the standad utilities, like 'ls', 'cat' etc. Let's assume you've got the QNX root FS extracted in `$QNX_ROOT`. Then this command will run the shell:
+To run Qine binaries, you will need a QNX root file system. At minimum, you will need the QNX system library, `Slib32`. But if you want to run shell, you will want the standad utilities, like `ls`, `cat` etc. Let's assume you've got the QNX root FS extracted in `$QNX_ROOT`. Then this command will run the shell:
 
 `PATH=/bin:/usr/bin qine -m /,$QNX_ROOT -m /host,/ -l $QNX_ROOT/boot/sys/Slib32,sys,entry=0x7D0 -- /bin/sh`
 
 To break it down:
 
-- `-m` specifies that '/' in QNX applications will be mapped to `$QNX_ROOT`. This will allow to e.g. run standard QNX utilities from shell.
+- `-m` specifies that `/` in QNX applications will be mapped to `$QNX_ROOT`. This will allow to e.g. run standard QNX utilities from shell.
 - second `-m` specifies that you will be able to access the other files as `/host/`
 - `-l` specifies the location of the mandatory system library and its entry points
-- We reset the `PATH` environment varible to a sane location applicable for QNX. Some modern distributions do not include `/bin`/ in path
+- We reset the `PATH` environment varible to a sane location applicable for QNX. Some modern distributions do not include `/bin` in path
 
-## Slib
+### Slib
 
 Slib32 is a system library needed to run most QNX libraries. Qine does not ship with this library, you need to get it from QNX. You need the actual library and you need to know its entry point and supply it to QNX, using the `--lib/-l` argument.
 
@@ -35,11 +35,26 @@ You can load the library for your program using:
   --lib $QNX_ROOT/boot/sys/Slib32,sys,entry=0x7d0
   ```
 
-## Emulation Details
+## Supported Features
 
 In general, file-access is supported, QNX IPC is not. Most POSIX-y utilities should run 
 (ksh, bash, ls, grep, find etc....). System utilities (sin) and other stuff using the QNX IPC is unlikely to run.
 
+Supported:
+- File access (open, read, write etc.)
+- Directories, stat
+- Pipes
+- Signals (PIDs are different in Qine)
+- Fork, exec and spawn
+- Terminal (tcgetattr etc.)
+- Basic segment operations, like growing
+
+Not suported (list not complete :)
+- QNX IPC, QNX File Servers
+- 16-bit binaries
+- mmap
+- advanced segment operations
+- binaries with relocations
 
 ## Compilation
 Qine is a standard CMake application. You can build it e.g using:
