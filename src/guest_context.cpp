@@ -171,6 +171,18 @@ std::string GuestContext::read_string(FarPointer ptr, size_t size) {
     return acc;
 }
 
+void GuestContext::clear_64bit_state() {
+   m_ctx->uc_mcontext.gregs[REG_RIP] = 0;
+   m_ctx->uc_mcontext.gregs[REG_RDI] = 0;
+   m_ctx->uc_mcontext.gregs[REG_RSI] = 0;
+   m_ctx->uc_mcontext.gregs[REG_RBP] = 0;
+   m_ctx->uc_mcontext.gregs[REG_RSP] = 0;
+   m_ctx->uc_mcontext.gregs[REG_RBX] = 0;
+   m_ctx->uc_mcontext.gregs[REG_RDX] = 0;
+   m_ctx->uc_mcontext.gregs[REG_RCX] = 0;
+   m_ctx->uc_mcontext.gregs[REG_RAX] = 0;
+}
+
 qine_no_tls void ExtraContext::from_cpu() {
     __asm__ ("mov %%ds, %0": "=r" (ds));
     __asm__ ("mov %%es, %0": "=r" (es));

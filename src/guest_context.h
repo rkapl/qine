@@ -83,6 +83,8 @@ public:
     ucontext_t *m_ctx;
     ExtraContext *m_ectx;
     inline Process *proc() const;
+    
+    void clear_64bit_state();
 
     /* Register accessors */
     /* We are on x86 so we can afford some unaligned stuff */

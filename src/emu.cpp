@@ -460,6 +460,7 @@ qine_no_tls void Emu::static_handler_user(int sig, siginfo_t *info, void *uctx)
     auto sig_ctx = reinterpret_cast<ucontext_t*>(uctx);
     GuestContext ctx(sig_ctx, &ectx);
     auto proc = Process::current();
+    ctx.clear_64bit_state();
 
     #define SYNC(x) ctx.reg_##x() = proc->m_startup_context.reg_##x()
     SYNC(eip);
