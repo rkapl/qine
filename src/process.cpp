@@ -76,8 +76,8 @@ void Process::initialize_pids() {
     pid_t ppid = getppid();
     m_pids.alloc_permanent_pid(QnxPid::PID_PROC, -1);
     m_pids.alloc_permanent_pid(QnxPid::PID_UNKNOWN, -1);
-    m_parent_pid = m_pids.alloc_permanent_pid(QnxPid::PID_ROOT_PARENT, ppid);
 
+    m_parent_pid = m_pids.alloc_related_pid(ppid, QnxPid::Type::ROOT_PARENT);
     m_my_pid = m_pids.alloc_related_pid(self, QnxPid::Type::SELF);
 
     m_pids.alloc_related_pid(getsid(ppid), QnxPid::Type::SID);

@@ -15,9 +15,8 @@ class QnxPid {
 public:
     static constexpr Qnx::mpid_t PID_PROC = 1;
     static constexpr Qnx::mpid_t PID_UNKNOWN = 2;
-    static constexpr Qnx::mpid_t PID_ROOT_PARENT = 3;
 
-
+    /* These are just informative (for debugging) for now */
     enum Type {
         // not yet initialized, temporary value
         EMPTY,
@@ -29,7 +28,7 @@ public:
         SELF,
         // our children
         CHILD, 
-        // for inherited PIDs that do not any of our PIDs
+        // for inherited PIDs that do not match any of our PIDs
         SID, PGID,
     };
 
@@ -44,8 +43,14 @@ private:
 };
 
 /* 
- * We need to remap PIDs, since Linux usually does not limit PIDs to 16 bits.
- * We create entries for forked processes, so that we can wait for them.
+ * We need some way to remap PIDs, since Linux does not usually not limit them to 16 bits.
+ * We at least try to make sure that the QNX processes can talk to their relatives 
+ * (ancestors, children, group leaders etc.).
+ *
+ * We use a one way function to compress the Linux PIDs to QNX PIDs + linear search from
+ * a random position if we hit a collision.
+ *
+ * E.g. we create entries for forked processes, so that we can wait for them.
  *
  * This is a bit complicated by process group IDs and session IDs, which share the same namespace.
  * For now, we assume that the only interesting session IDs and group IDs could be the our one,
@@ -67,13 +72,14 @@ public:
     QnxPid *host(int pid);
     void free_pid(QnxPid *pid);
 private:
-    QnxPid *alloc_empty();
+    uint16_t compress_pid(int host_pid);
+    uint16_t randomize_pid(int host_pid);
+    QnxPid *alloc_empty(int host_pid);
     // cannot be copied, because m_reverse_map keeps pointers into m_qnx_map
     NoCopy m_no_copy_marker;
 
     Qnx::mpid_t m_start_pid;
     Qnx::mpid_t m_last_pid;
-    Qnx::mpid_t m_next_pid;
 
     // we expect PIDs to be very sparse
     std::map<Qnx::mpid_t, QnxPid> m_qnx_map;
