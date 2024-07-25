@@ -47,8 +47,8 @@ public:
     void update_pids_after_fork(pid_t new_pid);
 
     std::shared_ptr<Segment> allocate_segment();
-    SegmentDescriptor* create_segment_descriptor(Access access, const std::shared_ptr<Segment>& mem);
-    SegmentDescriptor* create_segment_descriptor_at(Access access, const std::shared_ptr<Segment>& mem, SegmentId id);
+    SegmentDescriptor* create_segment_descriptor(Access access, const std::shared_ptr<Segment>& mem, bool cseg_32bit);
+    SegmentDescriptor* create_segment_descriptor_at(Access access, const std::shared_ptr<Segment>& mem, bool cseg_32bit, SegmentId id);
     void* translate_segmented(FarPointer ptr, uint32_t size = 0, RwOp op = RwOp::READ);
     FdMap& fds() {return m_fds;}
     PidMap& pids() {return m_pids;}
@@ -94,6 +94,7 @@ private:
     LoadInfo m_load_exec;
     LoadInfo m_load_slib;
     uint32_t m_slib_entry;
+    bool m_b16;
 
     // memory
     IntrusiveList::List<Segment> m_segments;

@@ -106,9 +106,14 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
         handled = true;
     }
 
+    if (ctx.reg_ds() == Qnx::MAGIC_PTR_SELECTOR) {
+        ctx.reg_ds() = Qnx::MAGIC_PTR_SELECTOR | 4;
+        handled = true;
+    }
+
     int insn_len;
     if (matches_syscall(ctx, 0xF2, &insn_len)) {
-        ctx.reg_eip() += insn_len;
+        ctx.reg_eip() += 2;
         // note: syscall includes sysreturn which may change eip
         dispatch_syscall(ctx);
         handled = true;

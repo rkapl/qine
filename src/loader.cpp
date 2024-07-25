@@ -170,10 +170,14 @@ void SegmentLoader::alloc_segment(uint32_t id, Access access, uint32_t size) {
     auto proc = Process::current();
     auto seg = proc->allocate_segment();
     auto aligned_size = MemOps::align_page_up(size);
-    if (m_ctx->m_slib) {
+    // QNX segments are more-or-less moveable. But moving is not supported yet
+    // So we try to guess and reserve stuff
+    if ((m_ctx->m_hdr.cflags & _TCF_32BIT) == 0) {
+        seg->reserve(MemOps::kilo(64));
+    } else if (m_ctx->m_slib) {
         seg->reserve(MemOps::mega(4));
     } else {
-        seg->reserve(MemOps::mega(256));
+        seg->reserve(MemOps::mega(64));
     }
     seg->grow(Access::READ_WRITE, aligned_size);
     m_segments[id].segment = seg;
@@ -264,11 +268,13 @@ void loader_load(int fd, LoadInfo *info_out, bool slib) {
     check_value("rec_type", &hdr, LMF_HEADER_REC, PTR_AND_VAL(hdr.record.rec_type));
     check_value("reserved", &hdr, 0, PTR_AND_VAL(hdr.record.reserved));
     check_value("spare", &hdr, 0, PTR_AND_VAL(hdr.record.spare));
-    int expected_flags = _TCF_32BIT;
-    check_value("cflags", &hdr, expected_flags, reinterpret_cast<char*>(&hdr.header.cflags), hdr.header.cflags & expected_flags);
     check_value("version", &hdr, QNX_VERSION, PTR_AND_VAL(hdr.header.version));
 
-    if (!(hdr.header.cpu == 386 || hdr.header.cpu == 486)) {
+    if ((hdr.header.cflags & _TCF_32BIT) == 0) {
+        info_out->b16 = true;
+    }
+
+    if (!(hdr.header.cpu == 386 || hdr.header.cpu == 486 || hdr.header.cpu == 286)) {
         panic("loader: unsupported cpu");
     }
 
@@ -321,9 +327,23 @@ void loader_load(int fd, LoadInfo *info_out, bool slib) {
 
         bool need_skip = true;
         if (rec.rec_type == LMF_FIXUP_REC) {
-            panic("loader: fixup rec unsupported");
+            uint32_t relocs = rec.data_nbytes / sizeof(qnx_reloc_item);
+            if (relocs * sizeof(qnx_reloc_item) != rec.data_nbytes)
+                throw LoaderFormatException("Unaligned relocation segment size");
+            printf("relocs: %d\n", relocs);
+            std::vector<qnx_reloc_item> reloc_buf;
+            reloc_buf.resize(relocs);
+            checked_read("loader: load relocs", fd, reloc_buf.data(), relocs * sizeof(qnx_reloc_item));
+            for (auto r: reloc_buf) {
+                int reloc_offset = 0x7;
+                auto reloc_what = reinterpret_cast<uint16_t*>(loader->get_segment(r.segment)->pointer(r.reloc_offset, 2));
+                uint16_t relocated_value = ((*reloc_what) & ~0x7u) + 0x7;
+                // printf("reloc %04x:%08x -- %x => %x\n", r.segment, r.reloc_offset, *reloc_what, relocated_value);
+                (*reloc_what) = relocated_value;
+            }
+            need_skip = false;
         } else if (rec.rec_type == LMF_LINEAR_FIXUP_REC) {
-            panic("loader: fixup rec unsupported");
+            panic("loader: linear fixup rec unsupported");
         } else if (rec.rec_type == LMF_RW_END_REC) {
             // We ignore signature for now
             rw_state = false;
@@ -360,8 +380,8 @@ void loader_load(int fd, LoadInfo *info_out, bool slib) {
     for (uint32_t si = 0; si < segment_count; si++) {
         /* Now create descriptors for the segments and write the selector information down */
         auto seg = loader->get_segment(si);
-        auto sd = proc->create_segment_descriptor(segment_types[si], seg);
-        Log::print(Log::LOADER, "segment %d selector: %x (access %d)\n", si, sd->selector(), segment_types[si]);
+        auto sd = proc->create_segment_descriptor(segment_types[si], seg, !info_out->b16);
+        Log::print(Log::LOADER, "segment %d selector: %x (access %d)\n", si, sd->selector(), static_cast<int>(segment_types[si]));
 
         if (hdr.header.code_index == si) 
             info_out->cs = sd->selector();

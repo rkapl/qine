@@ -40,7 +40,8 @@ Process::Process():
     m_sigtab(nullptr),
     m_fds(),
     m_magic_guest_pointer(FarPointer::null()),
-    m_slib_entry(0)
+    m_slib_entry(0),
+    m_b16(false)
 {
 }
 
@@ -149,6 +150,7 @@ void Process::load_executable(const PathInfo &path) {
     if (!Fsutil::realpath(current_path->host_path(), realpath)) {
         throw std::system_error(errno, std::system_category());
     }
+    m_b16 = m_load_exec.b16;
     m_executed_file = path_mapper().map_path_to_qnx(realpath.c_str());
 }
 
@@ -209,14 +211,14 @@ std::shared_ptr<Segment> Process::allocate_segment() {
     return seg;
 }
 
-SegmentDescriptor* Process::create_segment_descriptor(Access access, const std::shared_ptr<Segment>& mem)
+SegmentDescriptor* Process::create_segment_descriptor(Access access, const std::shared_ptr<Segment>& mem, bool seg_32bit)
 {
-    return m_segment_descriptors.alloc_any([=](size_t idx) {return new SegmentDescriptor(idx, access, mem);});
+    return m_segment_descriptors.alloc_any([=](size_t idx) {return new SegmentDescriptor(idx, access, mem, seg_32bit);});
 }
 
-SegmentDescriptor* Process::create_segment_descriptor_at(Access access, const std::shared_ptr<Segment>& mem, SegmentId id)
+SegmentDescriptor* Process::create_segment_descriptor_at(Access access, const std::shared_ptr<Segment>& mem, bool seg_32bit, SegmentId id)
 {
-    return m_segment_descriptors.alloc_exactly_at(id, [=](size_t idx) {return new SegmentDescriptor(idx, access, mem);});
+    return m_segment_descriptors.alloc_exactly_at(id, [=](size_t idx) {return new SegmentDescriptor(idx, access, mem, seg_32bit);});
 }
 
 SegmentDescriptor* Process::descriptor_by_selector(uint16_t id) {
@@ -238,17 +240,25 @@ void Process::setup_magic(SegmentDescriptor *data_sd, StartupSbrk& alloc)
     m_magic_pointer = allocate_segment();
     m_magic_pointer->reserve(MemOps::PAGE_SIZE);
     m_magic_pointer->grow(Access::READ_WRITE, MemOps::PAGE_SIZE);
-    m_magic_pointer->set_limit(8);
+    if (m_b16) {
+        m_magic_pointer->set_limit(6);
+    } else {
+        m_magic_pointer->set_limit(8);
+    }
     m_magic_pointer->make_shared();
-    // It is swapped for som reason
-    *reinterpret_cast<FarPointer*>(m_magic_pointer->pointer(0, sizeof(FarPointer))) = m_magic_guest_pointer;
+    
+    if (m_b16) {
+        *reinterpret_cast<FarPointer16*>(m_magic_pointer->pointer(0, sizeof(FarPointer))) = FarPointer16(m_magic_guest_pointer);
+    } else {
+        *reinterpret_cast<FarPointer*>(m_magic_pointer->pointer(0, sizeof(FarPointer))) = m_magic_guest_pointer;
+    }
     /* And publish it under well known ID. Unfortunately, we cannot publish GDT selectors (understandably), 
      * so we will fake it in emu 
      */
-    create_segment_descriptor_at(Access::READ_ONLY, m_magic_pointer, SegmentDescriptor::sel_to_id(Qnx::MAGIC_PTR_SELECTOR));
+    create_segment_descriptor_at(Access::READ_ONLY, m_magic_pointer, true, SegmentDescriptor::sel_to_id(Qnx::MAGIC_PTR_SELECTOR));
 
     for (size_t i = 0; i < sizeof(*m_magic) / 4; i++) {
-        // this helps us identify the values we filled out wront down the line
+        // this helps us identify the values we filled out wrong down the line
         *(reinterpret_cast<uint32_t*>(m_magic) + i) = 0xDEADBE00 + i;
     }
 
@@ -339,6 +349,7 @@ void Process::setup_startup_context(int argc, char **argv)
 
     ctx.reg_esp() = m_load_exec.stack_low + m_load_exec.stack_size - 4;
     ctx.reg_edx() = m_load_exec.stack_low;
+    ctx.reg_ebp() = pid();
 
     auto data_sd = descriptor_by_selector(m_load_exec.ss);
     if (!data_sd) {
@@ -355,20 +366,35 @@ void Process::setup_startup_context(int argc, char **argv)
     m_time_segment->grow(Access::READ_ONLY, MemOps::PAGE_SIZE);
     m_time_segment->set_limit(0x20);
 
-    m_time_segment_selector =  create_segment_descriptor(Access::READ_ONLY, m_time_segment)->id();
+    m_time_segment_selector =  create_segment_descriptor(Access::READ_ONLY, m_time_segment, true)->id();
 
-    /* Now create the stack environment, that is argc, argv, arge  */
-    ctx.push_stack(0); // Unknown
-    ctx.push_stack(nid()); // nid?
-    ctx.push_stack(parent_pid());
-    ctx.push_stack(pid());
+    /* Now create spawn message and the stack environment, that is argc, argv, arge  */
+    // in 32bit mode, there are more things passed on stack as "arguments",
+    // including the argument and environment lists
+    bool stack_env = !m_b16;
+    alloc.alloc(sizeof(QnxMsg::proc::spawn));
+    ctx.reg_edi() = alloc.offset();
+    auto spawn = reinterpret_cast<QnxMsg::proc::spawn*>(alloc.ptr());
+    spawn->m_type = QnxMsg::proc::msg_spawn::TYPE;
+
+    if (stack_env) {
+        ctx.push_stack(0); // Unknown
+        ctx.push_stack(nid()); // nid?
+        ctx.push_stack(parent_pid());
+        ctx.push_stack(pid());
+    }
 
     /* Environment */
-    ctx.push_stack(0);
+    size_t actual_env_size = 0;
+    if (stack_env)
+        ctx.push_stack(0);
+
     auto push_env = [&](const char *c) {
         //printf("pushing env %s\n", c);
-        alloc.push_string(c);    
-        ctx.push_stack(alloc.offset());
+        alloc.push_string(c);
+        if (stack_env)
+            ctx.push_stack(alloc.offset());
+        actual_env_size++;
     };
 
     // cmd and pfx must be last (probably so that the runtime can easily remove them)
@@ -404,17 +430,27 @@ void Process::setup_startup_context(int argc, char **argv)
         push_env(*e);
     }
 
-    /* Argv in reverse order*/
-    ctx.push_stack(0);
-    int final_argc = 0;
-    auto push_arg = [&](const char *arg) {
-        final_argc++;
-        alloc.push_string(arg);
-        ctx.push_stack(alloc.offset());
+    alloc.push_string("");
+
+    /* Argv  handling */
+    size_t actual_argv_size = 0;
+    if (stack_env) {
+        ctx.push_stack(0);
+    }
+
+    auto push_arg = [&](const char *c) {
+        // printf("pushing arg %s\n", c);
+        alloc.push_string(c);
+        if (stack_env)
+            ctx.push_stack(alloc.offset());
+        actual_argv_size++;
     };
+
+    /* push all normal args except argv[0] */
     for (int i = argc - 1; i > 0; i--) {
         push_arg(argv[i]);
     }
+
     if (!m_interpreter_info.has_interpreter) {
         push_arg(argv[0]);
     } else {
@@ -425,7 +461,12 @@ void Process::setup_startup_context(int argc, char **argv)
     }
 
     /* Argc */
-    ctx.push_stack(final_argc);
+    if (stack_env)
+        ctx.push_stack(actual_argv_size);
+
+    /* Setup the now generated spawn message */
+    spawn->m_argc = actual_argv_size;
+    spawn->m_envc = actual_env_size;
 
     /* Entry points*/
     if (!slib_loaded()) {

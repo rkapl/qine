@@ -5,8 +5,9 @@ will be always far pointer in the segment 0x78 pointing to MAGIC.
 
 # Early create
 
-Not clear if the process start in SLIB or calls into SLIB. Watcom shows it starting in SLIB, but there is code
-in CRT pointing to the opposite.
+The process actually start in SLIB. Not clear how this is done? SLIB checks for a special 'SLIB' signature
+in the program code and if it does not see it, it disables itself. Some code in CRT seems to suggest that the startup
+sequence used to be in reverse and SLIB was called into.
 
 Stack upon entry to SLIB looks like this:
     MAIN
@@ -32,16 +33,31 @@ EBX = curbrk (end of sbrk memory)
 ECX = free memory after curbrk (basically data segment end - curbrk)
 EDX = stack low
 
+Not used by CRT/Slib code:
+EBP = pid
+EDI = pointer to spawn message
+
+The spawn message itself is pushed to the heap.
+
+# 16-bit Early Startup
+
+There is no Slib (at least for vedit).
+
+Registers are the same as 32-bit, but the CRT uses the spawn EDI pointer.
+
+However, there seems to be nothing on the stack. Magic and the spawn message follow immediately.
+
 # Calling conventions
 
 Most of things use watcall.
-Quick watcall register callin convention info: All registers are preserved, except return (EAX).
+Quick watcall register calling convention info: All registers are preserved, except return (EAX).
 
 Arguments are placed in EAX, EDX, EBX, ECX (order in the linked source is probably wrong) and then stack.
 Caller cleans up the stack.
 
 But beware. If the function is variadic, like `open(const char* path, ...)` it will use watcom stack 
 based calling convention. This convention seems +- identical to cdecl.
+
 
 Source: http://jdebp.info/FGA/function-calling-conventions.html
 

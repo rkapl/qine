@@ -98,4 +98,13 @@ struct lmf_rw_end {
     uint32_t     signature;
 } qine_attribute_packed;
 
+struct qnx_reloc_item {
+    uint16_t segment;
+    uint32_t reloc_offset;
+} qine_attribute_packed;
+
+struct qnx_linear_item {
+    uint32_t reloc_offset;
+} qine_attribute_packed;
+
 #define VERIFY_OFFSET 36

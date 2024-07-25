@@ -9,8 +9,8 @@
 #include "segment_descriptor.h"
 #include "segment.h"
 
-SegmentDescriptor::SegmentDescriptor(SegmentId id, Access access, const std::shared_ptr<Segment>& seg)
-    :m_id(id), m_access(access), m_seg(seg) 
+SegmentDescriptor::SegmentDescriptor(SegmentId id, Access access, const std::shared_ptr<Segment>& seg, bool seg_32bit)
+    :m_id(id), m_access(access), m_seg(seg), m_32bit(seg_32bit) 
 {
     update_descriptors();
 }
@@ -26,7 +26,7 @@ void SegmentDescriptor::update_descriptors() {
         ud.limit = m_seg->size() - 1;
         ud.limit_in_pages = 0;
     }
-    ud.seg_32bit = 1;
+    ud.seg_32bit = m_32bit;
     ud.useable = 1;
     ud.read_exec_only = 0;
     if (m_access == Access::EXEC_ONLY || m_access == Access::EXEC_READ) {

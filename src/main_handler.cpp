@@ -505,7 +505,7 @@ void MainHandler::proc_segment_alloc(MsgContext& i)
     seg->reserve(MemOps::mega(1));
     seg->grow(Access::READ_WRITE, MemOps::align_page_up(msg.m_nbytes));
 
-    auto sd = i.ctx().proc()->create_segment_descriptor(Access::READ_WRITE, seg);
+    auto sd = i.ctx().proc()->create_segment_descriptor(Access::READ_WRITE, seg, true);
     
     QnxMsg::proc::segment_reply reply;
     memset(&reply, 0, sizeof(reply));

@@ -63,7 +63,7 @@ int main(int argc, char **argv) {
 
     try {
         for (;;) {
-            const char* opts = "d:h:r:m:s:l:";
+            const char* opts = "d:hr:m:s:l:";
             int c = getopt_long(argc, argv, opts, cmd_options, NULL);
             const char* this_optarg = optarg;
             if (c == -1)
