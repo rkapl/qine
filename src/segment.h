@@ -14,7 +14,8 @@
  * A QNX memory segment owns a set of pages that back its memory. The API allows the pages to be added 
  * (the grow and skip).
  *
- * For some small segments a precise size reporting via LSL is important.
+ * For some small segments a precise size reporting via LSL is important and supported.
+ * Thus segments support paged-based and bytes-based growing.
  */
 class Segment: public IntrusiveList::Node<> {
 public:
@@ -24,9 +25,10 @@ public:
     void reserve(size_t reservation);
     void reserve_at(size_t reservation, uintptr_t addr);
     void change_access(Access access, size_t offset, size_t size);
-    void grow(Access access, size_t new_size);
-    void skip(size_t skip);
-    void set_limit(size_t limit);
+    void grow_paged(Access access, size_t size);
+    /**  Grow the limit by X bytes, optionally allocating new pages of READ_WRITE */
+    void grow_bytes(size_t new_size);
+    void skip_paged(size_t skip);
 
     bool check_bounds(size_t offset, size_t size) const;
     void* pointer(size_t offset, size_t size);
@@ -35,7 +37,7 @@ public:
         return static_cast<GuestPtr>(reinterpret_cast<uintptr_t>(m_location));
     }
     size_t size() const {
-        return m_limit_size ? m_limit_size : m_paged_size;
+        return m_limit_size;
     }
     size_t paged_size() const {
         return m_paged_size;
@@ -44,6 +46,8 @@ public:
     void make_shared();
     bool is_shared() const;
 private:
+    /* Does not update limit size */
+    void grow_paged_internal(Access access, size_t size);
     static int map_prot(Access access);
     void update_descriptors();
     
@@ -56,14 +60,13 @@ private:
     std::vector<bool> m_bitmap;
 };
 
-/* Helper class to allocate small chunks of memory from data segment.
- * EBX/ECX is used to track SBRK information 
- */
+/* Helper class to allocate carve out chunks of memory from data segment, optionally allocatin more heap */
 class StartupSbrk {
 public:
-    StartupSbrk(Segment *seg, uint32_t offset);
+    StartupSbrk(Segment *seg, uint32_t m_offset);
     ~StartupSbrk();
     void alloc(uint32_t size);
+    void align();
     void push_string(const char *str);
 
     // Info for manipulating the last allocated chunk

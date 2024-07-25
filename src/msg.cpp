@@ -11,18 +11,50 @@
 #include "qnx/types.h"
 #include "types.h"
 
-Msg::Msg(Process* proc, size_t send_parts, FarPointer send, size_t rcv_parts, FarPointer rcv):
+Msg::Msg(Process* proc, size_t send_parts, FarPointer send, size_t rcv_parts, FarPointer rcv, Bitness bits):
     m_proc(proc), 
     m_rcv_parts(rcv_parts),
     m_send_parts(send_parts)
 {
-    m_send = reinterpret_cast<Qnx::mxfer_entry*>(
-        proc->translate_segmented(send, sizeof(Qnx::mxfer_entry) * send_parts, RwOp::READ)
-    );
+    if (bits == B32) {
+        m_send = reinterpret_cast<Qnx::mxfer_entry*>(
+            proc->translate_segmented(send, sizeof(Qnx::mxfer_entry) * send_parts, RwOp::READ)
+        );
 
-    m_rcv = reinterpret_cast<Qnx::mxfer_entry*>(
-        proc->translate_segmented(rcv, sizeof(Qnx::mxfer_entry) * rcv_parts, RwOp::WRITE)
-    );
+        m_rcv = reinterpret_cast<Qnx::mxfer_entry*>(
+            proc->translate_segmented(rcv, sizeof(Qnx::mxfer_entry) * rcv_parts, RwOp::WRITE)
+        );
+    } else {
+        translate_mxfer_entries(send_parts, 
+            reinterpret_cast<Qnx::mxfer_entry16*>(
+                proc->translate_segmented(send, sizeof(Qnx::mxfer_entry16) * send_parts, RwOp::READ)
+            ),
+            m_send_translated_entries
+        );
+        m_send = m_send_translated_entries.data();
+
+        translate_mxfer_entries(rcv_parts, 
+            reinterpret_cast<Qnx::mxfer_entry16*>(
+                proc->translate_segmented(rcv, sizeof(Qnx::mxfer_entry16) * rcv_parts, RwOp::READ)
+            ),
+            m_rcv_translated_entries
+        );
+        m_rcv = m_rcv_translated_entries.data();
+        //dump_structure(stderr);
+    }
+}
+
+void Msg::translate_mxfer_entries(size_t n, const Qnx::mxfer_entry16 src[], std::vector<Qnx::mxfer_entry>& dst) {
+    for (size_t i = 0; i < n; i++) {
+        const auto& src_entry = src[i];
+        Qnx::mxfer_entry dst_entry = {
+            .mxfer_off = src_entry.mxfer_off,
+            .mxfer_seg = src_entry.mxfer_seg,
+            .mxfer_zero = 0,
+            .mxfer_len = src_entry.mxfer_len,
+        };
+        dst.push_back(dst_entry);
+    }
 }
 
 Msg::~Msg() {

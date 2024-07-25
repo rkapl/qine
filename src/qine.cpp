@@ -99,14 +99,6 @@ int main(int argc, char **argv) {
         }
 
         proc->initialize_2();
-        for (auto d: delayed_args)
-            d();
-
-        if (!proc->slib_loaded() && !opt_no_slib) {
-            fprintf(stderr, "No system library specified on commandline using --lib. "
-                "For most executables, this needs to be specified. Use --no-slib to override\n");
-            exit(1);
-        }
 
         /* Remember all the arguments in case Qine needs to exec itself (to run another QNX binary) */
         std::vector<std::string> self_call;
@@ -142,6 +134,17 @@ int main(int argc, char **argv) {
         exec_path = proc->path_mapper().map_path_to_qnx(abspath.c_str());
     }
     proc->load_executable(exec_path);
+
+    /* loading of libraries*/
+    for (auto d: delayed_args)
+        d();
+
+    if (!proc->slib_loaded() && !opt_no_slib) {
+        fprintf(stderr, "No suitable system library specified on commandline using --lib. "
+            "For most executables, this needs to be specified. Use --no-slib to override\n");
+        exit(1);
+    }
+
     proc->setup_startup_context(argc, argv);
 
     proc->enter_emu();

@@ -71,7 +71,25 @@ int Segment::map_prot(Access access)
     return prot;
 }
 
-void Segment::grow(Access access, size_t size)
+void Segment::grow_paged(Access access, size_t size) {
+    grow_paged_internal(access, size);
+    m_limit_size = paged_size();
+}
+
+void Segment::grow_bytes(size_t size)
+{
+    if (size + m_limit_size > m_reserved) {
+        throw std::bad_alloc();
+    }
+
+    if (size + m_limit_size > m_paged_size) {
+        grow_paged_internal(Access::READ_WRITE, MemOps::align_page_up(size));
+    }
+
+    m_limit_size += size;
+}
+
+void Segment::grow_paged_internal(Access access, size_t size)
 {
     assert(MemOps::is_page_aligned(size));
 
@@ -93,7 +111,7 @@ void Segment::grow(Access access, size_t size)
     m_paged_size += size;
 }
 
-void Segment::skip(size_t new_size)
+void Segment::skip_paged(size_t new_size)
 {
     assert(MemOps::is_page_aligned(new_size));
 
@@ -112,11 +130,6 @@ void Segment::change_access(Access access, size_t offset, size_t size)
 {
     int r = mprotect(pointer(offset, size), size, map_prot(access));
     assert(r == 0);
-}
-
-void Segment::set_limit(size_t limit) {
-    assert(limit < m_paged_size);
-    m_limit_size = limit;
 }
 
 bool Segment::check_bounds(size_t offset, size_t size) const
@@ -159,7 +172,7 @@ Segment::~Segment() {
 
 StartupSbrk::StartupSbrk(Segment *seg, uint32_t offset): 
     m_segment(seg), 
-    m_offset(offset), 
+    m_offset(offset),
     m_last_offset(UINT32_MAX)
 {
 }
@@ -170,10 +183,18 @@ StartupSbrk::~StartupSbrk() {
 void StartupSbrk::alloc(uint32_t size)
 {
     m_last_offset = m_offset;
-    m_offset += MemOps::align_up(size, 8);
-    uint32_t needed = MemOps::align_page_up(m_offset);
-    if (needed > m_segment->paged_size()) {
-        m_segment->grow(Access::READ_WRITE, needed - m_segment->paged_size());
+    m_offset += size;
+    uint32_t needed = m_offset;
+    if (needed > m_segment->size()) {
+        m_segment->grow_bytes(needed - m_segment->size());
+    }
+}
+
+void StartupSbrk::align() {
+    m_offset = MemOps::align_up(m_offset, 16);
+    uint32_t needed = m_offset;
+    if (needed > m_segment->size()) {
+        m_segment->grow_bytes(needed - m_segment->size());
     }
 }
 

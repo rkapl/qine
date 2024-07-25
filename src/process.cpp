@@ -41,7 +41,7 @@ Process::Process():
     m_fds(),
     m_magic_guest_pointer(FarPointer::null()),
     m_slib_entry(0),
-    m_b16(false)
+    m_bits(B32)
 {
 }
 
@@ -93,6 +93,7 @@ void Process::load_library(std::string_view load_arg) {
     uint32_t entry;
     namespace CO = CommandOptions;
     bool slib = false;
+    bool slib16 = false;
     CO::parse(load_arg, {
         .core = {
             new CO::String(&lib)
@@ -100,11 +101,20 @@ void Process::load_library(std::string_view load_arg) {
         .kwargs = {
             new CO::KwArg<CO::Integer<uint32_t>>("entry", &entry),
             new CO::KwArg<CO::Flag>("sys", &slib),
+            new CO::KwArg<CO::Flag>("sys16", &slib16),
         }
     });
 
-    if (slib && entry == 0) {
+    if ((slib || slib16) && entry == 0) {
         throw ConfigurationError("Entry point must be specified for slib");
+    }
+
+    // load only the slib we need
+    if (slib && m_bits == B16) {
+        return;
+    }
+    if (slib16 && m_bits == B32) {
+        return;
     }
 
     LoadInfo li;
@@ -116,7 +126,7 @@ void Process::load_library(std::string_view load_arg) {
     }
     loader_load(fd.get(), &li, true);
 
-    if (slib) {
+    if (slib || slib16) {
         m_slib_entry = entry;
         m_load_slib = li;
     }
@@ -150,7 +160,7 @@ void Process::load_executable(const PathInfo &path) {
     if (!Fsutil::realpath(current_path->host_path(), realpath)) {
         throw std::system_error(errno, std::system_category());
     }
-    m_b16 = m_load_exec.b16;
+    m_bits = m_load_exec.bits;
     m_executed_file = path_mapper().map_path_to_qnx(realpath.c_str());
 }
 
@@ -211,14 +221,14 @@ std::shared_ptr<Segment> Process::allocate_segment() {
     return seg;
 }
 
-SegmentDescriptor* Process::create_segment_descriptor(Access access, const std::shared_ptr<Segment>& mem, bool seg_32bit)
+SegmentDescriptor* Process::create_segment_descriptor(Access access, const std::shared_ptr<Segment>& mem, Bitness bits)
 {
-    return m_segment_descriptors.alloc_any([=](size_t idx) {return new SegmentDescriptor(idx, access, mem, seg_32bit);});
+    return m_segment_descriptors.alloc_any([=](size_t idx) {return new SegmentDescriptor(idx, access, mem, bits);});
 }
 
-SegmentDescriptor* Process::create_segment_descriptor_at(Access access, const std::shared_ptr<Segment>& mem, bool seg_32bit, SegmentId id)
+SegmentDescriptor* Process::create_segment_descriptor_at(Access access, const std::shared_ptr<Segment>& mem, Bitness bits, SegmentId id)
 {
-    return m_segment_descriptors.alloc_exactly_at(id, [=](size_t idx) {return new SegmentDescriptor(idx, access, mem, seg_32bit);});
+    return m_segment_descriptors.alloc_exactly_at(id, [=](size_t idx) {return new SegmentDescriptor(idx, access, mem, bits);});
 }
 
 SegmentDescriptor* Process::descriptor_by_selector(uint16_t id) {
@@ -232,6 +242,7 @@ void Process::set_errno(int v) {
 void Process::setup_magic(SegmentDescriptor *data_sd, StartupSbrk& alloc)
 {
      /* Allocate place for the magic */
+    alloc.align();
     alloc.alloc(sizeof(Qnx::Magic));
     m_magic_guest_pointer = data_sd->pointer(alloc.offset());
     m_magic = reinterpret_cast<Qnx::Magic*>(alloc.ptr());
@@ -239,23 +250,14 @@ void Process::setup_magic(SegmentDescriptor *data_sd, StartupSbrk& alloc)
     /* Now create the magical segment that will be pointing to magic */
     m_magic_pointer = allocate_segment();
     m_magic_pointer->reserve(MemOps::PAGE_SIZE);
-    m_magic_pointer->grow(Access::READ_WRITE, MemOps::PAGE_SIZE);
-    if (m_b16) {
-        m_magic_pointer->set_limit(6);
-    } else {
-        m_magic_pointer->set_limit(8);
-    }
+    m_magic_pointer->grow_bytes(8);
     m_magic_pointer->make_shared();
+    *reinterpret_cast<FarPointer*>(m_magic_pointer->pointer(0, sizeof(FarPointer))) = m_magic_guest_pointer;
     
-    if (m_b16) {
-        *reinterpret_cast<FarPointer16*>(m_magic_pointer->pointer(0, sizeof(FarPointer))) = FarPointer16(m_magic_guest_pointer);
-    } else {
-        *reinterpret_cast<FarPointer*>(m_magic_pointer->pointer(0, sizeof(FarPointer))) = m_magic_guest_pointer;
-    }
     /* And publish it under well known ID. Unfortunately, we cannot publish GDT selectors (understandably), 
      * so we will fake it in emu 
      */
-    create_segment_descriptor_at(Access::READ_ONLY, m_magic_pointer, true, SegmentDescriptor::sel_to_id(Qnx::MAGIC_PTR_SELECTOR));
+    create_segment_descriptor_at(Access::READ_ONLY, m_magic_pointer, B32, SegmentDescriptor::sel_to_id(Qnx::MAGIC_PTR_SELECTOR));
 
     for (size_t i = 0; i < sizeof(*m_magic) / 4; i++) {
         // this helps us identify the values we filled out wrong down the line
@@ -265,7 +267,36 @@ void Process::setup_magic(SegmentDescriptor *data_sd, StartupSbrk& alloc)
     m_magic->my_pid = pid();
     m_magic->dads_pid = parent_pid();
     m_magic->my_nid = nid();
+}
 
+void Process::setup_magic16(SegmentDescriptor *data_sd, StartupSbrk& alloc)
+{
+     /* Allocate place for the magic */
+    alloc.align();
+    alloc.alloc(sizeof(Qnx::Magic16));
+    m_magic_guest_pointer = data_sd->pointer(alloc.offset());
+    m_magic16 = reinterpret_cast<Qnx::Magic16*>(alloc.ptr());
+    
+    /* Now create the magical segment that will be pointing to magic */
+    m_magic_pointer = allocate_segment();
+    m_magic_pointer->reserve(MemOps::PAGE_SIZE);
+    m_magic_pointer->grow_bytes(6);
+    *reinterpret_cast<FarPointer16*>(m_magic_pointer->pointer(0, sizeof(FarPointer))) = FarPointer16(m_magic_guest_pointer);
+    
+    /* And publish it under well known ID. Unfortunately, we cannot publish GDT selectors (understandably), 
+     * so we will fake it in emu 
+     */
+    create_segment_descriptor_at(Access::READ_ONLY, m_magic_pointer, B32, SegmentDescriptor::sel_to_id(Qnx::MAGIC_PTR_SELECTOR));
+
+    for (size_t i = 0; i < sizeof(*m_magic16) / 4; i++) {
+        // this helps us identify the values we filled out wrong down the line
+        *(reinterpret_cast<uint32_t*>(m_magic16) + i) = 0xDEADBE00 + i;
+    }
+
+    m_magic16->my_pid = pid();
+    m_magic16->dads_pid = parent_pid();
+    m_magic16->my_nid = nid();
+    m_magic16->sptrs[Qnx::SPTRS16_SLIB16PTR] = FarPointer16(m_load_slib.cs, m_slib_entry);
 }
 
 void Process::handle_msg(MsgContext& m)
@@ -334,6 +365,14 @@ void Process::handle_msg(MsgContext& m)
     });
 }
 
+void Process::push_pointer_block(const std::vector<GuestPtr>& block) {
+    auto& ctx = m_startup_context;
+    ctx.push_stack(0);
+    for (size_t i = 0; i < block.size(); i++) {
+        ctx.push_stack(block[block.size() - i - 1]);
+    }
+}
+
 void Process::setup_startup_context(int argc, char **argv)
 {
     auto& ctx = m_startup_context;
@@ -347,7 +386,7 @@ void Process::setup_startup_context(int argc, char **argv)
     ctx.reg_es() = m_load_exec.ds;
     ctx.reg_fs() = m_load_exec.ds;
 
-    ctx.reg_esp() = m_load_exec.stack_low + m_load_exec.stack_size - 4;
+    ctx.reg_esp() = m_load_exec.stack_low + m_load_exec.stack_size;
     ctx.reg_edx() = m_load_exec.stack_low;
     ctx.reg_ebp() = pid();
 
@@ -358,46 +397,70 @@ void Process::setup_startup_context(int argc, char **argv)
 
     auto data_seg = data_sd->segment();
     auto alloc = StartupSbrk(data_seg.get(), m_load_exec.heap_start);
-    setup_magic(data_sd, alloc);
+    if (m_bits == B16) {
+        setup_magic16(data_sd, alloc);
+    } else {
+        setup_magic(data_sd, alloc);
+    }
 
     /* Create time segment so that we do not crash, but we do not fill the time yet */
     m_time_segment = allocate_segment();
     m_time_segment->reserve(MemOps::PAGE_SIZE);
-    m_time_segment->grow(Access::READ_ONLY, MemOps::PAGE_SIZE);
-    m_time_segment->set_limit(0x20);
+    m_time_segment->grow_bytes(0x20);
 
-    m_time_segment_selector =  create_segment_descriptor(Access::READ_ONLY, m_time_segment, true)->id();
+    m_time_segment_selector =  create_segment_descriptor(Access::READ_ONLY, m_time_segment, B32)->id();
 
     /* Now create spawn message and the stack environment, that is argc, argv, arge  */
-    // in 32bit mode, there are more things passed on stack as "arguments",
-    // including the argument and environment lists
-    bool stack_env = !m_b16;
+    /* in 32bit mode, the stack is prepared and there are more things passed on stack as "arguments",
+      including the argument and environment lists
+      in 16bit mode, there are just registeres and the magic segment and the code manages the stack itself
+    */
+    bool stack_env = m_bits == B32;
+    alloc.align();
     alloc.alloc(sizeof(QnxMsg::proc::spawn));
     ctx.reg_edi() = alloc.offset();
     auto spawn = reinterpret_cast<QnxMsg::proc::spawn*>(alloc.ptr());
     spawn->m_type = QnxMsg::proc::msg_spawn::TYPE;
 
-    if (stack_env) {
-        ctx.push_stack(0); // Unknown
-        ctx.push_stack(nid()); // nid?
-        ctx.push_stack(parent_pid());
-        ctx.push_stack(pid());
+    std::vector<GuestPtr> argv_offsets;
+    std::vector<GuestPtr> envp_offsets;
+
+    if (m_interpreter_info.has_interpreter) {
+        alloc.push_string(m_interpreter_info.original_executable.qnx_path());
+    } else {
+        alloc.push_string(argv[0]);
     }
 
-    /* Environment */
-    size_t actual_env_size = 0;
-    if (stack_env)
-        ctx.push_stack(0);
+    /* Append argv after the spawn message */
+    auto push_arg = [&](const char *c) {
+        // printf("Adding arg %s\n", c);
+        alloc.push_string(c);
+        argv_offsets.push_back(alloc.offset());
+    };
 
+     if (!m_interpreter_info.has_interpreter) {
+        push_arg(argv[0]);
+    } else {
+        push_arg(m_interpreter_info.interpreter.qnx_path());
+        if (!m_interpreter_info.interpreter_args.empty())
+            push_arg(m_interpreter_info.interpreter_args.c_str());
+        push_arg(m_interpreter_info.original_executable.qnx_path());        
+    }
+
+    /* push all normal args except argv[0] */
+    for (int i = 1; i < argc; i++) {
+        push_arg(argv[i]);
+    }
+    alloc.push_string("");
+
+    /* Append environment after the spawn message */
     auto push_env = [&](const char *c) {
         //printf("pushing env %s\n", c);
         alloc.push_string(c);
-        if (stack_env)
-            ctx.push_stack(alloc.offset());
-        actual_env_size++;
+        envp_offsets.push_back(alloc.offset());
     };
 
-    // cmd and pfx must be last (probably so that the runtime can easily remove them)
+    // cmd and pfx must be first (probably so that the runtime can easily remove them)
     std::string env_cwd;
     std::string env_pfx;
     const char *env_cwd_key = "__CWD=";
@@ -410,17 +473,6 @@ void Process::setup_startup_context(int argc, char **argv)
             env_pfx = *e;
     }
 
-    if (env_cwd.empty()) {
-        std::string host_cwd(Fsutil::getcwd());
-        auto cwd_path = path_mapper().map_path_to_qnx(host_cwd.c_str());
-        env_cwd.append(env_cwd_key);
-        env_cwd.append(cwd_path.qnx_path());
-    }
-    push_env(env_cwd.c_str());
-
-    if (!env_pfx.empty())
-        push_env(env_pfx.c_str());
-    
     for (char **e = environ; *e; e++) {
         if (starts_with(*e, env_cwd_key))
             continue;
@@ -430,46 +482,37 @@ void Process::setup_startup_context(int argc, char **argv)
         push_env(*e);
     }
 
+    if (!env_pfx.empty())
+        push_env(env_pfx.c_str());
+
+    if (env_cwd.empty()) {
+        std::string host_cwd(Fsutil::getcwd());
+        auto cwd_path = path_mapper().map_path_to_qnx(host_cwd.c_str());
+        env_cwd.append(env_cwd_key);
+        env_cwd.append(cwd_path.qnx_path());
+    }
+    push_env(env_cwd.c_str());
     alloc.push_string("");
 
-    /* Argv  handling */
-    size_t actual_argv_size = 0;
+    /* Finalize the spawn message */
+    spawn->m_argc = argv_offsets.size();
+    spawn->m_envc = envp_offsets.size();
+    alloc.align();
+    
+    /* Generate the stack env for 32bit code*/
     if (stack_env) {
-        ctx.push_stack(0);
+        ctx.push_stack(0); // Unknown
+        ctx.push_stack(nid()); // nid?
+        ctx.push_stack(parent_pid());
+        ctx.push_stack(pid());
+
+        push_pointer_block(envp_offsets);
+        push_pointer_block(argv_offsets);
+        ctx.push_stack(argc);
     }
-
-    auto push_arg = [&](const char *c) {
-        // printf("pushing arg %s\n", c);
-        alloc.push_string(c);
-        if (stack_env)
-            ctx.push_stack(alloc.offset());
-        actual_argv_size++;
-    };
-
-    /* push all normal args except argv[0] */
-    for (int i = argc - 1; i > 0; i--) {
-        push_arg(argv[i]);
-    }
-
-    if (!m_interpreter_info.has_interpreter) {
-        push_arg(argv[0]);
-    } else {
-        if (!m_interpreter_info.interpreter_args.empty())
-            push_arg(m_interpreter_info.interpreter_args.c_str());
-        push_arg(m_interpreter_info.original_executable.qnx_path());
-        push_arg(m_interpreter_info.interpreter.qnx_path());
-    }
-
-    /* Argc */
-    if (stack_env)
-        ctx.push_stack(actual_argv_size);
-
-    /* Setup the now generated spawn message */
-    spawn->m_argc = actual_argv_size;
-    spawn->m_envc = actual_env_size;
 
     /* Entry points*/
-    if (!slib_loaded()) {
+    if (!slib_loaded() || m_bits == B16) {
         ctx.reg_cs() = m_load_exec.cs;
         ctx.reg_eip() = m_load_exec.entry;
         Log::print(Log::LOADER, "Program start: %x:%x\n", m_load_exec.cs, m_load_exec.entry);
@@ -477,8 +520,10 @@ void Process::setup_startup_context(int argc, char **argv)
         ctx.reg_cs() = m_load_slib.cs;
         ctx.reg_eip() = m_slib_entry;
         auto e = &m_load_exec.entry;
-        ctx.push_stack(m_load_exec.cs);
-        ctx.push_stack(m_load_exec.entry);
+        if (stack_env) {
+            ctx.push_stack(m_load_exec.cs);
+            ctx.push_stack(m_load_exec.entry);
+        }
         Log::print(Log::LOADER, "Slib start: %x:%x\n", m_load_slib.cs, m_slib_entry);
         Log::print(Log::LOADER, "Program start: %x:%x\n", m_load_exec.cs, m_load_exec.entry);
     }

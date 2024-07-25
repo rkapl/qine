@@ -47,13 +47,14 @@ public:
     void update_pids_after_fork(pid_t new_pid);
 
     std::shared_ptr<Segment> allocate_segment();
-    SegmentDescriptor* create_segment_descriptor(Access access, const std::shared_ptr<Segment>& mem, bool cseg_32bit);
-    SegmentDescriptor* create_segment_descriptor_at(Access access, const std::shared_ptr<Segment>& mem, bool cseg_32bit, SegmentId id);
+    SegmentDescriptor* create_segment_descriptor(Access access, const std::shared_ptr<Segment>& mem, Bitness bits);
+    SegmentDescriptor* create_segment_descriptor_at(Access access, const std::shared_ptr<Segment>& mem, Bitness bits, SegmentId id);
     void* translate_segmented(FarPointer ptr, uint32_t size = 0, RwOp op = RwOp::READ);
     FdMap& fds() {return m_fds;}
     PidMap& pids() {return m_pids;}
     PathMapper& path_mapper() {return m_path_mapper;}
 
+    void push_pointer_block(const std::vector<GuestPtr>& block);
     void setup_startup_context(int argc, char **argv);
     void enter_emu();
 
@@ -81,6 +82,7 @@ private:
 
     SegmentDescriptor* descriptor_by_selector(uint16_t id);
     void setup_magic(SegmentDescriptor *data_sd, StartupSbrk& alloc);
+    void setup_magic16(SegmentDescriptor *data_sd, StartupSbrk& alloc);
     void initialize();
     void initialize_pids();
 
@@ -94,7 +96,7 @@ private:
     LoadInfo m_load_exec;
     LoadInfo m_load_slib;
     uint32_t m_slib_entry;
-    bool m_b16;
+    Bitness m_bits;
 
     // memory
     IntrusiveList::List<Segment> m_segments;
@@ -115,6 +117,7 @@ private:
     std::shared_ptr<Segment> m_magic_pointer;
     FarPointer m_magic_guest_pointer;
     Qnx::Magic *m_magic;
+    Qnx::Magic16 *m_magic16;
 
     std::shared_ptr<Segment> m_time_segment;
     SegmentId m_time_segment_selector;

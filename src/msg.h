@@ -28,7 +28,7 @@ class MsgStreamReader;
 class Msg {
     friend class MsgStreamReader;
 public:
-    Msg(Process *proc, size_t m_send_parts, FarPointer m_send, size_t rcv_parts, FarPointer rcv);
+    Msg(Process *proc, size_t m_send_parts, FarPointer m_send, size_t rcv_parts, FarPointer rcv, Bitness b);
     ~Msg();
 
     void read(void *dst, size_t offset, size_t size);
@@ -46,6 +46,8 @@ public:
     void dump_send(FILE *f);
     void dump_structure(FILE *f);
 private:
+    void translate_mxfer_entries(size_t n, const Qnx::mxfer_entry16 src[], std::vector<Qnx::mxfer_entry>& dst);
+
     // Iterates through chunks, mainting position within chunk
     class Iterator {
     friend class Msg;
@@ -91,8 +93,11 @@ private:
     size_t m_rcv_parts;
     Qnx::mxfer_entry* m_rcv;
 
+    std::vector<Qnx::mxfer_entry> m_rcv_translated_entries;
+
     size_t m_send_parts;
     Qnx::mxfer_entry* m_send;
+    std::vector<Qnx::mxfer_entry> m_send_translated_entries;
 };
 
 /* Allows reading message byte-by-byte */

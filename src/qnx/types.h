@@ -26,5 +26,12 @@ namespace Qnx {
         uint16_t mxfer_zero;
         uint32_t mxfer_len;
     } qine_attribute_packed;
+
+      struct mxfer_entry16 {
+        uint16_t mxfer_off;
+        uint16_t mxfer_zero;
+        uint16_t mxfer_seg;
+        uint16_t mxfer_len;
+    } qine_attribute_packed;
 };
 

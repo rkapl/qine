@@ -17,9 +17,9 @@ public:
 };
 
 struct LoadInfo {
-    LoadInfo(): b16(false), entry(0), ss(0), ds(0), cs(0), heap_start(0), stack_low(0), stack_size(0) {}
+    LoadInfo(): bits(B32), entry(0), ss(0), ds(0), cs(0), heap_start(0), stack_low(0), stack_size(0) {}
 
-    bool b16;
+    Bitness bits;
     uint32_t entry;
     uint16_t ss, ds, cs;
     uint32_t heap_start;

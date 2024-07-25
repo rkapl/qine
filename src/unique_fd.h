@@ -17,6 +17,8 @@ public:
     inline int release();
     inline void close();
     inline ~UniqueFd();
+
+    static inline std::pair<UniqueFd, UniqueFd> create_pipe();
 private:
     int m_fd;
 };
@@ -46,6 +48,14 @@ void UniqueFd::close() {
         ::close(m_fd);
         m_fd = -1;
     }
+}
+
+std::pair<UniqueFd, UniqueFd> UniqueFd::create_pipe() {
+    int p[2];
+    if (pipe(p) != 0) {
+        return std::make_pair(UniqueFd(), UniqueFd());
+    }
+    return std::make_pair(UniqueFd(p[0]), UniqueFd(p[1]));
 }
 
 UniqueFd::~UniqueFd() {

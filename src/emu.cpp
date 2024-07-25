@@ -35,8 +35,8 @@ void Emu::init() {
     size_t stack_size = MemOps::PAGE_SIZE*8;
     size_t with_guard = MemOps::PAGE_SIZE + stack_size;
     m_emulation_stack->reserve(with_guard);
-    m_emulation_stack->skip(MemOps::PAGE_SIZE);
-    m_emulation_stack->grow(Access::READ_WRITE, stack_size);
+    m_emulation_stack->skip_paged(MemOps::PAGE_SIZE);
+    m_emulation_stack->grow_paged(Access::READ_WRITE, stack_size);
 
     stack_t sas = {};
     sas.ss_size = MemOps::PAGE_SIZE*8;
@@ -113,7 +113,7 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
 
     int insn_len;
     if (matches_syscall(ctx, 0xF2, &insn_len)) {
-        ctx.reg_eip() += 2;
+        ctx.reg_eip() += insn_len;
         // note: syscall includes sysreturn which may change eip
         dispatch_syscall(ctx);
         handled = true;
@@ -121,7 +121,12 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
         ctx.reg_eip() += insn_len;
         dispatch_syscall_sem(ctx);
         handled = true;
+    } else if (matches_syscall(ctx, 0xF0, &insn_len)) {
+        ctx.reg_eip() += insn_len;
+        dispatch_syscall16(ctx);
+        handled = true;
     }
+    
     
     if (!handled) {
         //ctx.dump(stderr, 64);
@@ -288,6 +293,9 @@ void Emu::dispatch_syscall(GuestContext& ctx)
             case 8:
                 syscall_priority(ctx);;
                 break;
+            case 10:
+                syscall_yield(ctx);
+                break;
             case 11:
                 syscall_sendfdmx(ctx);
                 break;
@@ -305,8 +313,8 @@ void Emu::dispatch_syscall(GuestContext& ctx)
 }
 
 void Emu::dispatch_syscall_sem(GuestContext &ctx) {
-    auto sem_addr = ctx.reg_eax();
-    auto syscall = ctx.reg_ebx();
+    auto sem_addr = ctx.clip16(ctx.reg_eax());
+    auto syscall = ctx.clip16(ctx.reg_ebx());
     auto sem = reinterpret_cast<Qnx::sem_t*>(
         ctx.proc()->translate_segmented(FarPointer(ctx.reg_ds(), sem_addr), sizeof(Qnx::sem_t), RwOp::WRITE)
     );
@@ -333,9 +341,16 @@ void Emu::dispatch_syscall_sem(GuestContext &ctx) {
             sem->value--;
         }
     } else {
+        Log::print(Log::UNHANDLED, "Unknown semaphore syscall: %d\n", syscall);
         ctx.set_syscall_error(Qnx::QENOSYS);
     }
 }
+
+void Emu::syscall_yield(GuestContext &ctx) {
+    sched_yield();
+    ctx.set_syscall_ok();
+}
+
 
 void Emu::syscall_sendfdmx(GuestContext &ctx)
 {
@@ -347,7 +362,7 @@ void Emu::syscall_sendfdmx(GuestContext &ctx)
     GuestPtr send_data = ctx.reg_ebx();
     GuestPtr recv_data = ctx.reg_esi();
 
-    Msg msg(proc, send_parts, FarPointer(ds, send_data),  recv_parts, FarPointer(ds, recv_data));
+    Msg msg(proc, send_parts, FarPointer(ds, send_data),  recv_parts, FarPointer(ds, recv_data), B32);
     MsgContext info;
     info.m_ctx = &ctx;
     info.m_msg = &msg;
@@ -385,8 +400,8 @@ void Emu::syscall_sendmx(GuestContext &ctx)
     GuestPtr send_data = ctx.reg_ebx();
     GuestPtr recv_data = ctx.reg_esi();
 
-    Msg msg(Process::current(), send_parts, FarPointer(ds, send_data),  recv_parts, FarPointer(ds, recv_data));
-    // TODO: handle faults etc.
+    Msg msg(Process::current(), send_parts, FarPointer(ds, send_data),  recv_parts, FarPointer(ds, recv_data), B32);
+    
     MsgContext info;
     info.m_ctx = &ctx;
     info.m_msg = &msg;
@@ -401,6 +416,12 @@ void Emu::syscall_sendmx(GuestContext &ctx)
 void Emu::syscall_kill(GuestContext &ctx)
 {
     int qnx_signo = ctx.reg_ebx();
+    int32_t qnx_code = ctx.reg_edx();
+    kill(ctx, qnx_signo, qnx_code);
+}
+
+void Emu::kill(GuestContext& ctx, int qnx_signo, int qnx_code)
+{
     int host_signo = QnxSigset::map_sig_qnx_to_host(qnx_signo);
     if (host_signo == -1) {
         Log::print(Log::UNHANDLED, "QNX signal %d unknown\n", qnx_signo);
@@ -408,7 +429,6 @@ void Emu::syscall_kill(GuestContext &ctx)
         return;
     }
 
-    int32_t qnx_code = ctx.reg_edx();
     int host_code;
     if (qnx_code == 0 || qnx_code == -1) {
         host_code = qnx_code;
@@ -429,12 +449,123 @@ void Emu::syscall_kill(GuestContext &ctx)
     }
 
     Log::print(Log::SIG ,"syscall_kill host pid %d, signo %d\n", host_code, qnx_signo);
-    int r = kill(host_code, host_signo);
+    int r = ::kill(host_code, host_signo);
     if (r < 0) {
         ctx.set_syscall_error(map_errno(errno));
     } else {
         ctx.set_syscall_ok();
     }
+}
+
+void Emu::dispatch_syscall16(GuestContext& ctx)
+{
+    uint16_t syscall = ctx.read<uint16_t>(GuestContext::SS, ctx.reg_esp() + 0);
+    try {
+        switch (syscall) {
+            case 0:
+                syscall16_sendmx(ctx);
+                break;
+            case 1:
+                syscall16_receivmx(ctx);
+                break;
+            case 7:
+                syscall16_sigreturn(ctx);
+                break;
+            case 8:
+                syscall_priority(ctx);;
+                break;
+            case 10:
+                syscall_yield(ctx);
+                break;
+            case 11:
+                syscall16_sendfdmx(ctx);
+                break;
+            default:
+                printf("Unknown 16-bit syscall %d\n", syscall);
+                ctx.set_syscall_error(Qnx::QENOSYS);
+        }
+    } catch (const SegmentationFault& e) {
+        Log::print(Log::UNHANDLED, "Segfault during message handling: %s\n", e.what());
+        ctx.set_syscall_error(Qnx::QEFAULT);
+    }
+}
+
+void Emu::syscall16_sendfdmx(GuestContext &ctx)
+{
+    auto proc = Process::current();
+    uint16_t args[7];
+    ctx.read_stack16(1, 7, args);
+    
+    uint32_t ds = ctx.reg_ds();
+    int fd = args[0];
+    uint8_t send_parts = args[1];
+    uint8_t recv_parts = args[2];
+    FarPointer send_data(args[4], args[3]);
+    FarPointer recv_data(args[6], args[5]);
+
+    Msg msg(proc, send_parts, send_data,  recv_parts, recv_data, B16);
+    MsgContext info;
+    info.m_ctx = &ctx;
+    info.m_msg = &msg;
+    info.m_proc = proc;
+    info.m_via_fd = true;
+    info.m_fd = fd;
+
+    proc->handle_msg(info);
+    ctx.set_syscall_ok();
+}
+
+void Emu::syscall16_receivmx(GuestContext &ctx)
+{
+    // we do not support messages yet, but slib:pause uses it as e.g. "pause" (=wait for signal)
+    Qnx::pid_t pid = ctx.reg_edx();
+    uint8_t rcv_parts = ctx.reg_ah();
+    GuestPtr rmsg = ctx.reg_ebx();
+
+    if (pid == ctx.proc()->pid() || pid == QnxPid::PID_PROC || pid == 0) {
+        pause();
+        ctx.set_syscall_error(Qnx::QEINTR);
+    } else {
+        ctx.set_syscall_error(Qnx::QESRCH);
+    }
+}
+
+void Emu::syscall16_sendmx(GuestContext &ctx)
+{
+    auto proc = Process::current();
+    uint16_t args[7];
+    ctx.read_stack16(1, 7, args);
+    
+    Qnx::pid_t pid = args[0];
+    uint8_t send_parts = args[1];
+    uint8_t recv_parts = args[2];
+    FarPointer send_data(args[4], args[3]);
+    FarPointer recv_data(args[6], args[5]);
+
+    Msg msg(Process::current(), send_parts, send_data,  recv_parts, recv_data, B16);
+    
+    MsgContext info;
+    info.m_ctx = &ctx;
+    info.m_msg = &msg;
+    info.m_proc = proc;
+    info.m_via_fd = false;
+    info.m_pid = pid;
+
+    proc->handle_msg(info);
+    ctx.set_syscall_ok();
+}
+
+void Emu::syscall16_sigreturn(GuestContext &ctx)
+{
+    m_sigmask = ctx.pop_stack();
+    ctx.restore_context();
+
+    ctx.reg_esp() += REDLINE;
+
+    Log::print(Log::SIG, "Return from emulated signal, new mask %x, @sp %x, to %x:%x\n", 
+        m_sigmask.m_value, ctx.reg_esp(),
+        ctx.reg_cs(), ctx.reg_eip()
+    );
 }
 
 void Emu::signal_raise(int qnx_sig)

@@ -67,4 +67,37 @@ struct Magic {
      */
     char                     fpsave[1];         /* Variable length */
 } ;
+
+struct Magic16 {
+    uint16_t                Errno;
+    Qnx::mpid_t             my_pid;
+    Qnx::mpid_t             dads_pid;
+    uint16_t                zero1;
+    Qnx::nid_t              my_nid;
+    uint16_t                dgroup;
+    uint16_t                zero2[2];
+    uint16_t                my_tid;
+    FarPointer16            malloc,
+                             realloc,
+                             free,
+                             getenv,
+                             calloc,
+                             sptrs[20];
+    struct Qnx::mxfer_entry16      xmsg;
+    uint32_t                    xmsg_pad;              /* So same size as _mxfer_entry32 */
+    struct QnxMsg::proc::terminate_request   msg;
+    char                     fpsave[1];     /* Variable length */
+};
+
+static constexpr int SPTRS16_UNKNOWN = 0;
+static constexpr int SPTRS16_SLIB16PTR = 0;
+static constexpr int SPTRS16_EFGFMT = 1;
+static constexpr int SPTRS16_CMD = 2;
+static constexpr int SPTRS16_CWD = 3;
+static constexpr int SPTRS16_ROOT_PRFX = 4;
+static constexpr int SPTRS16_TERM_STATE = 5;
+static constexpr int SPTRS16_KER_NDP = 6;
+static constexpr int SPTRS16_QWINDOWS = 7;
+static constexpr int SPTRS16_32_0 = 8;
+static constexpr int SPTRS16_32_1 = 9;
 }

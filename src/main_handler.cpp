@@ -503,9 +503,9 @@ void MainHandler::proc_segment_alloc(MsgContext& i)
     
     auto seg  = i.ctx().proc()->allocate_segment();
     seg->reserve(MemOps::mega(1));
-    seg->grow(Access::READ_WRITE, MemOps::align_page_up(msg.m_nbytes));
+    seg->grow_paged(Access::READ_WRITE, MemOps::align_page_up(msg.m_nbytes));
 
-    auto sd = i.ctx().proc()->create_segment_descriptor(Access::READ_WRITE, seg, true);
+    auto sd = i.ctx().proc()->create_segment_descriptor(Access::READ_WRITE, seg, B32);
     
     QnxMsg::proc::segment_reply reply;
     memset(&reply, 0, sizeof(reply));
@@ -532,7 +532,7 @@ void MainHandler::proc_segment_realloc(MsgContext& i)
         reply.m_status = Qnx::QEBUSY;
     } else {
         if (seg->size() < msg.m_nbytes) {
-            seg->grow(Access::READ_WRITE, MemOps::align_page_up(msg.m_nbytes - seg->size()));
+            seg->grow_paged(Access::READ_WRITE, MemOps::align_page_up(msg.m_nbytes - seg->size()));
             // TODO: this must be done better, the segment must be aware of its descriptors,
             // at least code and data 
             sd->update_descriptors();

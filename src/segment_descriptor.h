@@ -12,7 +12,7 @@ class SegmentDescriptor {
 public:
     SegmentDescriptor(SegmentDescriptor&&) = default;
     SegmentDescriptor& operator=(SegmentDescriptor&&) = default;
-    SegmentDescriptor(SegmentId id, Access access, const std::shared_ptr<Segment>& seg, bool seg_32bit);
+    SegmentDescriptor(SegmentId id, Access access, const std::shared_ptr<Segment>& seg, Bitness bits);
     ~SegmentDescriptor();
     
     static constexpr uint16_t SEL_LDT = 1u << 2;
@@ -38,7 +38,7 @@ private:
     SegmentId m_id;
     Access m_access;
     std::shared_ptr<Segment> m_seg;
-    bool m_32bit;
+    Bitness m_bits;
 };
 
 constexpr uint16_t SegmentDescriptor::mk_sel(SegmentId id){

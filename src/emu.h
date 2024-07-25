@@ -35,12 +35,20 @@ public:
     ~Emu();
 private:
     void dispatch_syscall(GuestContext& ctx);
+    void dispatch_syscall16(GuestContext& ctx);
     void syscall_sendmx(GuestContext& ctx);
     void syscall_sendfdmx(GuestContext& ctx);
     void syscall_kill(GuestContext& ctx);
     void syscall_sigreturn(GuestContext& ctx);
     void syscall_receivmx(GuestContext& ctx);
     void syscall_priority(GuestContext& ctx);
+    void syscall_yield(GuestContext& ctx);
+
+    void syscall16_sendmx(GuestContext& ctx);
+    void syscall16_sendfdmx(GuestContext& ctx);
+    void syscall16_kill(GuestContext& ctx);
+    void syscall16_sigreturn(GuestContext& ctx);
+    void syscall16_receivmx(GuestContext& ctx);
 
     void dispatch_syscall_sem(GuestContext& ctx);
 
@@ -49,6 +57,7 @@ private:
     void handler_generic(int sig, siginfo_t *info, void *uctx);
     void signal_tail(GuestContext& ctx);
     void sync_host_sigmask(GuestContext &ctx);
+    void kill(GuestContext& ctx, int qnx_signo, int qnx_code);
 
     static bool is_special_sighandler(uint32_t qnx_handler);
     static Qnx::Sigaction* qnx_sigtab(Process *proc, int qnx_signo, bool required=true);

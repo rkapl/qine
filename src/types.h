@@ -37,6 +37,11 @@ enum class Access {
     INVALID = 8,
 };
 
+enum Bitness {
+    B32 = 1,
+    B16 = 0,
+};
+
 struct FarPointer {
     FarPointer() = default;
     constexpr FarPointer(uint16_t segment, uint32_t offset): m_segment(segment), m_offset(offset) {}

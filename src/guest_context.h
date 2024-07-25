@@ -59,6 +59,7 @@ public:
 
     void* translate(SegmentRegister, uint32_t addr, uint32_t size = 0, RwOp write = RwOp::READ);
     void read_data(SegmentRegister s, void *dst, uint32_t addr, uint32_t size);
+    size_t read_data_partial(SegmentRegister s, void *dst, uint32_t addr, uint32_t size);
     void write_data(SegmentRegister s, const void *src, uint32_t addr, uint32_t size);
 
     template<class T>
@@ -85,6 +86,8 @@ public:
     inline Process *proc() const;
     
     void clear_64bit_state();
+
+    inline uint32_t clip16(uint32_t val);
 
     /* Register accessors */
     /* We are on x86 so we can afford some unaligned stuff */
@@ -128,6 +131,8 @@ public:
         reg_eax() = Qnx::QEOK;
     }
 
+    inline void read_stack16(size_t offset, size_t count, uint16_t* dst);
+
 private:
     #ifdef __amd64__
     inline uint32_t& greg(int id) {
@@ -145,7 +150,17 @@ private:
     uint16_t get_seg(SegmentRegister r);
 
     Process *m_proc;
+    bool m_b16;
 };
+
+inline void GuestContext::read_stack16(size_t offset, size_t count, uint16_t* dst) {
+    uint32_t esp = reg_esp();
+    read_data(SS, dst, esp + offset * sizeof(uint16_t), count * sizeof(uint16_t));
+}
+
+uint32_t GuestContext::clip16(uint32_t val) {
+    return m_b16 ? (val & 0xFFFF) : val;
+}
 
 template<class T>
 T GuestContext::read(SegmentRegister s, uint32_t addr) {
