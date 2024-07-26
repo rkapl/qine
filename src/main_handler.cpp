@@ -1878,7 +1878,11 @@ void MainHandler::fsys_link(MsgContext &i) {
 
     auto fd = i.proc().fds().get_open_fd(msg.m_arg.m_fd);
     i.proc().path_mapper().map_path_to_host(fd->m_path);
-    int r = link(fd->m_path.host_path(), msg.m_new_path);
+
+    auto dst_path = PathInfo::mk_qnx_path(msg.m_new_path);
+    i.proc().path_mapper().map_path_to_host(dst_path);
+
+    int r = link(fd->m_path.host_path(), dst_path.host_path());
     if (r == 0) {
         i.msg().write_status(Qnx::QEOK);
     } else {
