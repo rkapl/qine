@@ -799,35 +799,29 @@ void MainHandler::proc_exec_common(MsgContext &i) {
     std::vector<size_t > envo;
 
     auto read_string = [&buf, &r]() {
-        size_t len = 0;
         char c = r.get(); 
         while (c) {
             buf.push_back(c);
-            len++;
             c = r.get();
         }
         buf.push_back(0);
-        return len;
     };
 
-    size_t len;
-
     size_t exec_path_o = buf.size();
-    len = read_string();
-
-    argvo.push_back(buf.size());
-    len = read_string();
-    while (len != 0) {
+    read_string();
+    
+    for (int i = 0; i < msg.m_argc; i++) {
         argvo.push_back(buf.size());
-        len = read_string();
+        read_string();
     }
+    // skip the separating null string
+    read_string();
 
-    envo.push_back(buf.size());
-    len = read_string();
-    while (len != 0) {
+    for (int i = 0; i < msg.m_envc; i++) {
         envo.push_back(buf.size());
-        len = read_string();
+        read_string();
     }
+    read_string();
 
     // now that the buf is ready and will not be moved, convert offsets into pointers
 
@@ -839,8 +833,6 @@ void MainHandler::proc_exec_common(MsgContext &i) {
     for (auto o: envo) {
         envp.push_back(&buf[o]);
     }
-    argvp.erase(argvp.end() - 1);
-    envp.erase(envp.end() - 1);
 
     // remove prefix, does not handle malformed ones
     // TODO: pass argv[0] and exec path to qine separately
@@ -900,10 +892,10 @@ void MainHandler::proc_exec_common(MsgContext &i) {
     final_argv.push_back(nullptr);
 
     for (auto o: final_argv) {
-        //printf("Arg: %s\n", o);
+        // printf("Arg: %s\n", o);
     }
-    for (auto o: argvp) {
-        //printf("Env %s\n", o);
+    for (auto o: envp) {
+         // printf("Env %s\n", o);
     }
     // printf("About to exec: %s\n", final_exec);
 
