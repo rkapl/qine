@@ -108,3 +108,76 @@ msg term_size {
           padd: u32;
      }
 }
+
+msg tcdrain {
+     type: 0x0313;
+
+     request {
+          fd: fd;
+     }
+     reply {
+          status: u16;
+     }
+}
+
+msg tcflush {
+     type: 0x0314;
+
+     request {
+          fd: fd;
+          queue: u16;
+     }
+     reply {
+          status: u16;
+     }
+}
+
+msg read {
+     type: 0x031E;
+     request {
+          fd: fd;
+          nbytes: i16;
+          minimum: u16;
+          time: u16;
+          timeout: u16;
+          proxy: pid;
+          proxy_spare: u16;
+          zero: u16;
+     }
+
+     reply {
+          status: u16;
+          nbytes: i16;
+          timeout: u16;
+          empty: u16;
+          # data follows
+     }
+}
+
+msg insert_chars {
+     type: 0x0318;
+     request {
+          fd: fd;
+          nbytes: i16;
+     }
+     reply {
+          status: u16;
+     }
+}
+
+msg mode {
+     type: 0x0319;
+     request {
+          fd: fd;
+          mode: u16;
+          mask: u16;
+          zero1: u16;
+          zero2: u16;
+     }
+     reply {
+          status: u16;
+          oldmode: u16;
+          zero1: u16;
+          zero2: u16;
+     }
+}

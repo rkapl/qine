@@ -9,6 +9,7 @@
 #include <sys/statvfs.h>
 #include <sys/stat.h>
 #include <system_error>
+#include <termios.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <time.h>
@@ -344,7 +345,21 @@ void MainHandler::receive_inner(MsgContext& i) {
         case QnxMsg::dev::msg_term_size::TYPE:
             dev_term_size(i);
             break;
-
+        case QnxMsg::dev::msg_tcdrain::TYPE:
+            dev_tcdrain(i);
+            break;
+        case QnxMsg::dev::msg_tcflush::TYPE:
+            dev_tcflush(i);
+            break;
+        case QnxMsg::dev::msg_read::TYPE:
+            dev_read(i);
+            break;
+        case QnxMsg::dev::msg_insert_chars::TYPE:
+            dev_insert_chars(i);
+            break;
+        case QnxMsg::dev::msg_mode::TYPE:
+            dev_mode(i);
+            break;
         default:
             unhandled_msg();
             break;
@@ -2104,8 +2119,14 @@ bool MainHandler::fill_dev_info(MsgContext &i, QnxFd *fd, QnxMsg::dev::dev_info 
     dst->m_driver_pid = QnxPid::PID_PROC;
     dst->m_nature = 0;
     dst->m_attributes = 0;
-    dst->m_capabilities = 0xF; // readers, writers, winch, fwd (guesses)
+    dst->m_capabilities = 0;
     dst->m_open_count = 1;
+    dst->m_unit = 1;
+    dst->m_flags = 0xf; //readers, writers, winch, fwd (just a guess
+    auto pgrp = i.proc().pids().host(tcgetpgrp(fd->m_host_fd));
+    dst->m_pgrp = pgrp ? pgrp->qnx_pid() : QnxPid::PID_UNKNOWN;
+    auto sess = i.proc().pids().host(tcgetsid(fd->m_host_fd));
+    dst->m_session = sess ? sess->qnx_pid() : QnxPid::PID_UNKNOWN;
 
     std::string ttyname;
     if (!Fsutil::ttyname(fd->m_host_fd, ttyname)) {

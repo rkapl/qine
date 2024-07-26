@@ -1,3 +1,4 @@
+#include <sys/uio.h>
 #include <termios.h>
 #include <sys/ioctl.h>
 
@@ -50,6 +51,7 @@ void MainHandler::terminal_qioctl(Ioctl &i) {
             Log::print(Log::UNHANDLED, "Unhandled terminal IOCTL %d (full %x)\n", i.request_number(), i.request_code());
     }
     #endif
+    i.set_status(Qnx::QENOSYS);
 }
 
 #define CC_MAP \
@@ -162,8 +164,8 @@ uint16_t MainHandler::handle_tcsetattr(MsgContext &i, int16_t qnx_fd, const Qnx:
     #undef MAP
 
     #define MAP_FIELD(field, qnx, host) \
-    attr.field &= ~Qnx::qnx; \
-    if (qnx_attr->field & host) attr.field |= Qnx::qnx;
+    attr.field &= ~host; \
+    if (qnx_attr->field & Qnx::qnx) attr.field |= host;
 
     #define MAP(qnx, host) MAP_FIELD(c_iflag, qnx, host)
     IFLAG_MAP
@@ -198,6 +200,9 @@ uint16_t MainHandler::handle_tcsetattr(MsgContext &i, int16_t qnx_fd, const Qnx:
         actions = TCSADRAIN;
     if (qnx_action & Qnx::QTCSAFLUSH)
         actions = TCSAFLUSH;
+
+    // not supported on QNX
+    attr.c_oflag |= ONLCR;
 
     r = tcsetattr(i.map_fd(i.m_fd), actions, &attr);
     if (r < 0) {
@@ -345,4 +350,147 @@ void MainHandler::dev_tcsetpgrp(MsgContext &i) {
     QnxMsg::dev::tcsetpgrp_request msg;
     i.msg().read_type(&msg);
     i.msg().write_status(handle_tcsetpgrp(i, msg.m_fd, msg.m_pgrp));
+}
+
+void MainHandler::dev_tcflush(MsgContext &i) {
+    QnxMsg::dev::tcflush_request msg;
+    i.msg().read_type(&msg);
+    int r = tcflush(i.map_fd(msg.m_fd), msg.m_queue);
+    i.msg().write_status(Emu::map_errno(r));
+}
+
+void MainHandler::dev_tcdrain(MsgContext &i) {
+    QnxMsg::dev::tcdrain_request msg;
+    i.msg().read_type(&msg);
+    int r = tcdrain(i.map_fd(msg.m_fd));
+    i.msg().write_status(Emu::map_errno(r));
+}
+
+void MainHandler::dev_read(MsgContext &i) {
+    int r;
+    QnxMsg::dev::read_request msg;
+    i.msg().read_type(&msg);
+    
+    int fd = i.map_fd(msg.m_fd);
+
+    if (msg.m_proxy != 0) {
+        Log::print(Log::UNHANDLED, "dev_read with proxies is not supported");
+        i.msg().write_status(Qnx::QENOTSUP);
+        return;
+    }
+
+    /* The mapping between vmin and vtime is not correct here but works for termlib */
+
+    termios ts;
+    r = tcgetattr(fd, &ts);
+    if (r != 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+        return;
+    }
+    termios ts_orig = ts;
+    
+    ts.c_lflag &= ~ICANON;
+    ts.c_cc[VMIN] = msg.m_minimum;
+    if (msg.m_time && msg.m_timeout) {
+        ts.c_cc[VTIME] = std::min(msg.m_time, msg.m_timeout);
+    } else {
+        // choose whichever is set
+        ts.c_cc[VTIME] = std::max(msg.m_time, msg.m_timeout);
+    }
+
+    r = tcsetattr(fd, TCSANOW, &ts);
+    if (r != 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+        return;
+    }
+
+    QnxMsg::dev::read_reply reply;
+    clear(&reply);
+    std::vector<struct iovec> iov;
+    i.msg().write_iovec(sizeof(reply), msg.m_nbytes, iov);
+
+    r = readv(fd, iov.data(), iov.size());
+    if (r < 0) {
+        reply.m_status = Emu::map_errno(errno);
+        reply.m_nbytes = 0;
+    } else {
+        reply.m_status = Qnx::QEOK;
+        reply.m_nbytes = r;
+    }
+    tcsetattr(fd, TCSANOW, &ts_orig);
+    i.msg().write_type(0, &reply);
+}
+
+void MainHandler::dev_insert_chars(MsgContext &ctx) {
+    QnxMsg::dev::insert_chars_request msg;
+    int fd = ctx.map_fd(msg.m_fd);
+    ctx.msg().read_type(&msg);
+    for (int i = 0; i < msg.m_nbytes; i++) {
+        char v;
+        ctx.msg().read_type(&v, sizeof(msg) + i);
+        int r = ioctl(fd, TIOCSTI, v);
+        if (r != 0) {
+            ctx.msg().write_status(Emu::map_errno(errno));
+        }
+    }
+    ctx.msg().write_status(Qnx::QEOK);
+}
+
+void MainHandler::dev_mode(MsgContext &i) {
+    QnxMsg::dev::mode_request msg;
+    QnxMsg::dev::mode_reply reply;
+    i.msg().read_type(&msg);
+    int fd = i.map_fd(msg.m_fd);
+
+    struct termios ts;
+    int r = tcgetattr(fd, &ts);
+    if (r < 0) {
+        i.msg().write_status(Emu::map_errno(errno));
+        return;
+    }
+
+    clear(&reply);
+
+    if (ts.c_lflag & ECHO)
+        reply.m_oldmode |= Qnx::DEV_ECHO;
+    if (ts.c_lflag & ICANON)
+        reply.m_oldmode |= Qnx::DEV_EDIT;
+    if (ts.c_lflag & ISIG)
+        reply.m_oldmode |= Qnx::DEV_ISIG;
+    if (ts.c_oflag & OPOST)
+        reply.m_oldmode |= Qnx::DEV_OPOST;
+
+    ts.c_lflag &= ~(ECHO | ICANON | ISIG);
+    ts.c_oflag &= ~ OPOST;
+    // OSFLOW not handled
+
+    if (msg.m_mask & Qnx::DEV_ECHO) {
+        ts.c_lflag &= ~(ECHO);
+        if (msg.m_mode & Qnx::DEV_ECHO)
+            ts.c_lflag |= ECHO;
+    }
+
+    if (msg.m_mask & Qnx::DEV_EDIT) {
+        ts.c_iflag &= ~ (ICRNL | IGNCR | INLCR);
+        ts.c_lflag &= ~ ICANON;
+
+        if (msg.m_mode & Qnx::DEV_EDIT) {
+            ts.c_lflag |= ICANON;
+        }
+    }
+
+    if (msg.m_mask & Qnx::DEV_ISIG) {
+        ts.c_lflag &= ~ISIG;
+        if (msg.m_mode & Qnx::DEV_ISIG) {
+            ts.c_lflag |= Qnx::DEV_ISIG;
+        }
+    }
+
+    if (msg.m_mask & Qnx::DEV_OPOST) {
+        ts.c_lflag &= ~OPOST;
+        if (msg.m_mode & Qnx::DEV_OPOST) {
+            ts.c_lflag |= Qnx::DEV_OPOST;
+        }
+    }
+    i.msg().write_status(Emu::map_errno(tcsetattr(fd, TCSANOW, &ts)));
 }

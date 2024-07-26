@@ -200,5 +200,11 @@ static constexpr int QTC_ECHOI = 0x0010;
 static constexpr int QTC_IFWD = 0x0020;
 static constexpr int QTC_PROTECT_IEXTEN = 0x0040;
 
+static constexpr int DEV_ECHO = 0x0001;
+static constexpr int DEV_EDIT = 0x0002;
+static constexpr int DEV_ISIG = 0x0004;
+static constexpr int DEV_OPOST = 0x0008;
+static constexpr int DEV_OSFLOW = 0x0010;
+
 
 }

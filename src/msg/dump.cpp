@@ -131,7 +131,6 @@ const Meta::Message* Meta::find_message(FILE *s, const MessageList &list, const 
 
 
     if (t == t_end) {
-        fprintf(s, "Unknown message (%x: %x)\n", hdr.type, hdr.subtype);
         return nullptr;
     }
 

@@ -116,6 +116,11 @@ private:
     void dev_tcsetpgrp(MsgContext &i);
     void dev_tcgetpgrp(MsgContext &i);
     void dev_term_size(MsgContext &i);
+    void dev_tcdrain(MsgContext &i);
+    void dev_tcflush(MsgContext &i);
+    void dev_read(MsgContext &i);
+    void dev_insert_chars(MsgContext &i);
+    void dev_mode(MsgContext &i);
     void ioctl_terminal_get_size(Ioctl &i);
     void ioctl_terminal_set_size(Ioctl &i);
 
