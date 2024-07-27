@@ -139,17 +139,21 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
 
 bool Emu::matches_syscall(GuestContext &ctx, int int_nr, int* insn_len) {
     *insn_len = 0;
-    auto eip = ctx.reg_eip();
-    auto b1 = ctx.read<uint8_t>(GuestContext::CS, eip);
-    // prefix
-    if (b1 == 0x66) {
-        eip++;
-        (*insn_len) ++;
-        b1 = ctx.read<uint8_t>(GuestContext::CS, eip);
-    }
+    try {
+        auto eip = ctx.reg_eip();
+        auto b1 = ctx.read<uint8_t>(GuestContext::CS, eip);
+        // prefix
+        if (b1 == 0x66) {
+            eip++;
+            (*insn_len) ++;
+            b1 = ctx.read<uint8_t>(GuestContext::CS, eip);
+        }
 
-    (*insn_len) += 2;
-    return b1 == 0xCD && ctx.read<uint8_t>(GuestContext::CS, eip + 1) == int_nr;
+        (*insn_len) += 2;
+        return b1 == 0xCD && ctx.read<uint8_t>(GuestContext::CS, eip + 1) == int_nr;
+    } catch (const SegmentationFault&) {
+        return false;
+    }
 }
 
 qine_no_tls void Emu::static_handler_generic(int sig, siginfo_t *info, void *uctx) {
@@ -244,17 +248,31 @@ qine_no_tls void Emu::signal_tail(GuestContext& ctx) {
     ctx.push_stack(save_sigmask);
 
     // arguments to sigstub
-    ctx.push_stack(0); // unknown
-    ctx.push_stack(qnx_sig);
-    ctx.push_stack(act->handler_fn);
+    if (proc->m_bits == B32) {
+        ctx.push_stack(0); // unknown
+        ctx.push_stack(qnx_sig);
+        ctx.push_stack(act->handler_fn);
 
-    ctx.reg_cs() = proc->m_load_exec.cs;
-    ctx.reg_eip() = proc->m_sigtab->sigstub;
-    Log::print(Log::SIG, "Emulating QNX signal %d, handler %x:%x, via stub %x, @esp %x, new mask %x, pending %x\n", 
-        qnx_sig,
-        proc->m_load_exec.cs, act->handler_fn, proc->m_sigtab->sigstub, 
-        old_esp,
-        m_sigmask.m_value, m_sigpend.m_value);
+        ctx.reg_cs() = proc->m_load_exec.cs;
+        ctx.reg_eip() = proc->m_sigtab->sigstub;
+
+        Log::print(Log::SIG, "Emulating QNX signal %d, handler %x:%x, via stub %x, @esp %x\n", qnx_sig,
+            proc->m_load_exec.cs, act->handler_fn, proc->m_sigtab->sigstub, 
+            old_esp);
+    } else {
+        auto stub = reinterpret_cast<FarPointer16&>(proc->m_sigtab->sigstub);
+        auto handler = reinterpret_cast<FarPointer16&>(act->handler_fn);
+
+        ctx.push_stack16(qnx_sig);
+        ctx.reg_cs() = stub.m_segment;
+        ctx.reg_eip() = stub.m_offset;
+
+        Log::print(Log::SIG, "Emulating 16-bit QNX signal %d, handler %x:%x, via stub %x:%x, @esp %x\n", qnx_sig,
+            handler.m_segment, handler.m_offset, stub.m_segment, stub.m_offset,
+            old_esp);
+    }
+    Log::print(Log::SIG, "New mask %x, pending %x\n", 
+            m_sigmask.m_value, m_sigpend.m_value);
     ctx.m_ectx->to_cpu();
 }
 
@@ -313,8 +331,8 @@ void Emu::dispatch_syscall(GuestContext& ctx)
 }
 
 void Emu::dispatch_syscall_sem(GuestContext &ctx) {
-    auto sem_addr = ctx.clip16(ctx.reg_eax());
-    auto syscall = ctx.clip16(ctx.reg_ebx());
+    auto sem_addr = ctx.reg_eax();
+    auto syscall = ctx.reg_ebx();
     auto sem = reinterpret_cast<Qnx::sem_t*>(
         ctx.proc()->translate_segmented(FarPointer(ctx.reg_ds(), sem_addr), sizeof(Qnx::sem_t), RwOp::WRITE)
     );
@@ -333,7 +351,7 @@ void Emu::dispatch_syscall_sem(GuestContext &ctx) {
             ctx.set_syscall_ok();
         }
     } else if (syscall == 2) {
-        // try_again
+        // try_wait
         if (sem->value == 0) {
             ctx.set_syscall_error(Qnx::QEAGAIN);
         } else {
@@ -557,6 +575,9 @@ void Emu::syscall16_sendmx(GuestContext &ctx)
 
 void Emu::syscall16_sigreturn(GuestContext &ctx)
 {
+    // throw away the syscall number
+    ctx.pop_stack16();
+    
     m_sigmask = ctx.pop_stack();
     ctx.restore_context();
 
@@ -652,9 +673,9 @@ void Emu::enter_emu() {
     raise(SIGUSR1);
 }
 
-int Emu::signal_sigact(int qnx_sig, uint32_t handler, uint32_t mask)
+int Emu::signal_sigact(int qnx_sig, FarPointer handler, uint32_t mask)
 {
-    if (handler == Qnx::QSIG_HOLD) {
+    if (handler.m_offset == Qnx::QSIG_HOLD) {
         m_sigmask.set_qnx_sig(qnx_sig);
         return Qnx::QEOK;
     }
@@ -669,11 +690,11 @@ int Emu::signal_sigact(int qnx_sig, uint32_t handler, uint32_t mask)
         sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
         sigfillset(&sa.sa_mask);
         
-        if (handler == Qnx::QSIG_DFL) {
+        if (handler.m_offset == Qnx::QSIG_DFL) {
             sa.sa_handler = SIG_DFL;
-        } else if (handler == Qnx::QSIG_IGN) {
+        } else if (handler.m_offset == Qnx::QSIG_IGN) {
             sa.sa_handler = SIG_IGN;
-        } else if (handler == Qnx::QSIG_ERR) {
+        } else if (handler.m_offset == Qnx::QSIG_ERR) {
             sa.sa_handler = SIG_ERR;
         } else {
             sa.sa_sigaction = static_handler_generic;
@@ -685,10 +706,14 @@ int Emu::signal_sigact(int qnx_sig, uint32_t handler, uint32_t mask)
         }
     }
 
-    Log::print(Log::SIG, "Registered signal %d, handler %x\n", qnx_sig, handler);   
+    Log::print(Log::SIG, "Registered signal %d, handler %x:%x\n", qnx_sig, handler.m_segment, handler.m_offset);   
     auto si = qnx_sigtab(Process::current(), qnx_sig);
     si->flags = 0;
-    si->handler_fn = handler;
+    if (Process::current()->m_bits == B32) {
+        si->handler_fn = handler.m_offset;
+    } else {
+        reinterpret_cast<FarPointer16&>(si->handler_fn) = FarPointer16(handler.m_segment, handler.m_offset);
+    }
     si->mask = mask;
     
     return Qnx::QEOK;

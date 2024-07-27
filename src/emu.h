@@ -22,7 +22,7 @@ public:
     void init();
     void enter_emu();
 
-    int signal_sigact(int qnx_sig, uint32_t handler, uint32_t mask);
+    int signal_sigact(int qnx_sig, FarPointer handler, uint32_t mask);
     void signal_raise(int qnx_sig);
     void signal_mask(uint32_t change_mask, uint32_t bits);
     uint32_t signal_getmask();

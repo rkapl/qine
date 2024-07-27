@@ -5,18 +5,19 @@
 #include "common.h"
 
 int main(void) {
+    // Both are just different ways to sleeps. Sleep is implemented internally using the timer.
     struct itimerspec ms100;
     struct sigevent se = {0};
     int r, timer;
 
     ms100.it_value.tv_sec = 0;
-    ms100.it_value.tv_nsec = 77*1000*1000;
+    ms100.it_value.tv_nsec = 250ul*1000ul*1000ul;
     ms100.it_interval.tv_sec = 0;
-    ms100.it_interval.tv_nsec = 78*1000*1000;
+    ms100.it_interval.tv_nsec = 250ul*1000ul*1000ul;
 
-    printf("ex! nanosleep\n");
+    printf("ex! sleep\n");
     printf("ex! timer_create\n");
-
+    printf("ex! settime\n");
 
     se.sigev_signo = 0;
     se.sigev_value.sigval_int = 77;

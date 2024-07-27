@@ -72,9 +72,20 @@ void GuestContext::push_stack(uint32_t value) {
     write(SS, reg_esp(), value);
 }
 
+void GuestContext::push_stack16(uint16_t value) {
+    reg_esp() -= 2;
+    write(SS, reg_esp(), value);
+}
+
 uint32_t GuestContext::pop_stack() {
     auto v = read<uint32_t>(SS, reg_esp());
     reg_esp() += 4;
+    return v;
+}
+
+uint16_t GuestContext::pop_stack16() {
+    auto v = read<uint16_t>(SS, reg_esp());
+    reg_esp() += 2;
     return v;
 }
 
@@ -86,6 +97,8 @@ void GuestContext::dump(FILE *s, size_t stack) {
         fprintf(s, "context %x:%x, linear %p\n", cs, ip, linear);
     } catch (const GuestStateException& e) {
         fprintf(s, "context %x:%x, %s\n", cs, ip, e.what());
+    } catch (const SegmentationFault&) {
+        fprintf(s, "context %x:%x, linear unavailable\n", cs, ip);
     }
 
     fprintf(s, "EAX: %08X  EBX: %08x  ECX: %08X  EDX: %08X\n",

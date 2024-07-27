@@ -151,6 +151,10 @@ void MainHandler::receive_inner(MsgContext& i) {
                 case QnxMsg::proc::msg_sigtab::SUBTYPE:
                     proc_sigtab(i);
                     break;
+                case QnxMsg::proc::msg_sigraise::SUBTYPE:
+                    // used by 16-bit code
+                    proc_sigraise(i);
+                    break;
                 case QnxMsg::proc::msg_sigact::SUBTYPE:
                     proc_sigact(i);
                     break;
@@ -476,7 +480,15 @@ void MainHandler::proc_fd_query(MsgContext& i) {
         reply.m_info.m_pid = fd->m_pid;
         reply.m_info.m_vid = fd->m_vid;
         reply.m_info.m_nid = fd->m_nid;
-        reply.m_info.m_flags = fd->m_flags << 8;
+        /* Not sure what is going on here, there must be some similar work - around in QNX too.
+        * There is some weird not about someone "messing up" the bit position by 8 bits...
+        * QNX I think does not have process-specific replies, so not sure what they are doing.
+        */
+        if (i.proc().m_bits == B32) {
+            reply.m_info.m_flags = fd->m_flags << 8;
+        } else {
+            reply.m_info.m_flags = fd->m_flags;
+        }
         reply.m_fd = fd->m_fd;
     } else {
         reply.m_status = Qnx::QEINVAL;
@@ -518,7 +530,11 @@ void MainHandler::proc_segment_alloc(MsgContext& i)
     
     auto seg  = i.ctx().proc()->allocate_segment();
     seg->reserve(MemOps::mega(1));
-    seg->grow_paged(Access::READ_WRITE, MemOps::align_page_up(msg.m_nbytes));
+    auto nbytes = msg.m_nbytes;
+    if (i.proc().m_bits == B16) {
+        nbytes &= 0x1FFFFu;
+    }
+    seg->grow_bytes(nbytes);
 
     auto sd = i.ctx().proc()->create_segment_descriptor(Access::READ_WRITE, seg, B32);
     
@@ -692,12 +708,22 @@ void MainHandler::proc_sigact(MsgContext &i) {
 
     QnxMsg::proc::signal_reply reply;
     memset(&reply, 0, sizeof(reply));
-    int r = i.ctx().proc()->m_emu.signal_sigact(msg.m_signum, msg.m_offset, msg.m_mask);
+    int r = i.ctx().proc()->m_emu.signal_sigact(msg.m_signum, FarPointer(msg.m_segment, msg.m_offset), msg.m_mask);
     if (r < 0) {
         reply.m_status = Emu::map_errno(errno);
     } else {
         reply.m_status = Qnx::QEOK;
     }
+    i.msg().write_type(0, &reply);
+}
+
+void MainHandler::proc_sigraise(MsgContext &i) {
+    QnxMsg::proc::signal_request msg;
+    i.msg().read_type(&msg);
+
+    QnxMsg::proc::signal_reply reply;
+    clear(&reply);
+    i.proc().m_emu.signal_raise(msg.m_signum);
     i.msg().write_type(0, &reply);
 }
 
@@ -935,6 +961,8 @@ void MainHandler::proc_timer_create(MsgContext &i) {
     QnxMsg::proc::timer_request msg;
     i.msg().read_type(&msg);
 
+    /* proper timers are not supproted yet, only as simple sleep implementation (no proxies, no signals)*/
+    #if 0
     struct sigevent sev;
     sev.sigev_notify = SIGEV_NONE;
     switch (msg.m_arg.m_notify_type) {
@@ -955,19 +983,20 @@ void MainHandler::proc_timer_create(MsgContext &i) {
     }
 
     timer_t out_timer;
+    printf("Got timer %p\n", out_timer);
     int r = timer_create(CLOCK_REALTIME, &sev, &out_timer);
     if (r < 0) {
         i.msg().write_status(Emu::map_errno(errno));
     } else {
-        QnxMsg::proc::timer_reply reply;
-        clear(&reply);
-        
-        reply.m_status = Qnx::QEOK;
-        /* We hope that will be able to pass the timer directly to QNX*/
-        /* Until then, we will need to create a special map. We may need to do it anyway to support the special flags.*/
-        reply.m_arg.m_cookie = reinterpret_cast<uintptr_t>(out_timer);
-        i.msg().write_type(0, &reply);
-    }
+    #endif
+    QnxMsg::proc::timer_reply reply;
+    clear(&reply);
+    
+    reply.m_status = Qnx::QEOK;
+    /* We hope that we will be able to pass the timer directly to QNX*/
+    /* Until then, we will need to create a special map. We may need to do it anyway to support the special flags.*/
+    reply.m_arg.m_cookie = 3;
+    i.msg().write_type(0, &reply);
 }
 
 void MainHandler::proc_timer_settime(MsgContext &i) {
@@ -985,7 +1014,6 @@ void MainHandler::proc_timer_settime(MsgContext &i) {
         }
     };
 
-    timer_t host_timer = reinterpret_cast<timer_t>(static_cast<uintptr_t>(msg.m_arg.m_cookie));
     int host_flags = 0;
     if (msg.m_arg.m_flags & Qnx::QTIMER_ABSTIME) {
         host_flags |= TIMER_ABSTIME;
@@ -1009,10 +1037,6 @@ void MainHandler::proc_timer_settime(MsgContext &i) {
     reply.m_arg.m_nsec1 = rem.tv_sec;
     reply.m_arg.m_sec1 = rem.tv_nsec;
     i.msg().write_type(0, &reply);
-
-    if (r == 0 && msg.m_arg.m_flags & Qnx::QTIMER_AUTO_RELEASE) {
-        timer_delete(host_timer);
-    }
 }
 
 void MainHandler::proc_timer_alarm(MsgContext &i) {

@@ -290,7 +290,7 @@ void Process::setup_magic16(SegmentDescriptor *data_sd, StartupSbrk& alloc)
 
     for (size_t i = 0; i < sizeof(*m_magic16) / 4; i++) {
         // this helps us identify the values we filled out wrong down the line
-        *(reinterpret_cast<uint32_t*>(m_magic16) + i) = 0xDEADBE00 + i;
+        m_magic16->sptrs[i].m_segment = 0xDEA0 + i;
     }
 
     m_magic16->my_pid = pid();
@@ -478,12 +478,14 @@ void Process::setup_startup_context(int argc, char **argv)
             continue;
         if (starts_with(*e,  env_pfx_key))
             continue;
-        //printf("Passing %s\n", *e);
         push_env(*e);
     }
 
-    if (!env_pfx.empty())
+    if (!env_pfx.empty()) {
         push_env(env_pfx.c_str());
+    } else {
+        push_env("__PFX=//1");
+    }
 
     if (env_cwd.empty()) {
         std::string host_cwd(Fsutil::getcwd());

@@ -69,7 +69,9 @@ public:
     void write(SegmentRegister s, uint32_t addr, const T& value);
 
     void push_stack(uint32_t value);
+    void push_stack16(uint16_t value);
     uint32_t pop_stack();
+    uint16_t pop_stack16();
 
     // Save/restore registers to stack in QNX format, can be used for e.g. stack handlers
     void save_context();

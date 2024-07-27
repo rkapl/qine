@@ -49,6 +49,7 @@ private:
     void proc_psinfo(MsgContext &i);
     void proc_sigtab(MsgContext &i);
     void proc_sigact(MsgContext &i);
+    void proc_sigraise(MsgContext &i);
     void proc_getid(MsgContext &i);
     void proc_sigmask(MsgContext &i);
     void proc_osinfo(MsgContext &i);

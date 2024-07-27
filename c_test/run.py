@@ -10,6 +10,7 @@ import sys
 parse = argparse.ArgumentParser()
 parse.add_argument('test', default=None, nargs='?')
 parse.add_argument('-d', action='append')
+parse.add_argument('-b', action='store', choices=[16, 32], default=32, type=int)
 
 args = parse.parse_args()
 
@@ -18,9 +19,13 @@ os.chdir(c_test)
 
 qnx = Path(os.environ['QNX_ROOT'])
 slib_spec = shlex.split(os.environ['QNX_SLIB'])
-watcom = qnx / 'usr/watcom/10.6'
 qine = c_test / '../build/qine'
 build = c_test / 'build'
+cc =  '/bin/cc'
+qine_cmd = [qine] + slib_spec + [
+    '-m', f'/,{qnx}', 
+    '-m', f'/t,{Path.cwd()},exec=qnx',
+    '--']
 
 build.mkdir(exist_ok=True)
 
@@ -44,24 +49,17 @@ def run_test(test, single=False):
     test_dir = build / test
     test_dir.mkdir(exist_ok=True)
     os.chdir(test_dir)
-    qine_cmd = [qine] + slib_spec + ['--']
-
     print(f'----- TEST {test} ------')
 
-    includes = [
-        '-I' + str(watcom / 'include'),
-        '-I' + str(qnx / 'usr/include'),
-    ]
+    if args.b == 32:
+        switch = '-3'
+    else:
+        switch = '-2'
 
-    exec(qine_cmd + [watcom / 'bin/wcc386', f'../../{test}.c'] + includes)
-    exec(qine_cmd + [watcom / 'bin/wcc386', f'../../common.c'] + includes)
-    exec(qine_cmd + [watcom / 'bin/wlink', 
-        'FORM', 'qnx', 'flat', 'NAME', test, 'OP', 'q', 'FILE', f'{test}.o', 'FILE', f'common.o',
-        'LIB', 'unix3r',
-        'LIBP', ':'.join([
-            str(watcom / 'include'),
-            str(qnx / 'usr/lib')
-        ])
+    exec(qine_cmd + [cc , switch, '-c', f'../../{test}.c'])
+    exec(qine_cmd + [cc, switch, '-c', f'../../common.c'])
+    exec(qine_cmd + [cc, switch,
+        '-o', f'{test}', 'common.o', f'{test}.o', '-lunix'
     ])
 
     extra_args = []
