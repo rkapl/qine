@@ -1,8 +1,8 @@
 #!/bin/bash
 set -eux
 ninja -C build
-exec env -i "QNX_ROOT=$QNX_ROOT" "PATH=/bin:/usr/bin" "TERM=xterm-color" \
-    build/qine -m /,$QNX_ROOT -m /host,/ \
+exec env -i "HOME=/host/home/roman" "QNX_ROOT=$QNX_ROOT" "PATH=/bin:/usr/bin" "TERM=$TERM" \
+    build/qine -m /,$QNX_ROOT -m /host,/,exec=qnx \
     $QNX_SLIB \
     "$@"
 

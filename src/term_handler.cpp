@@ -390,12 +390,14 @@ void MainHandler::dev_read(MsgContext &i) {
     termios ts_orig = ts;
     
     ts.c_lflag &= ~ICANON;
-    ts.c_cc[VMIN] = msg.m_minimum;
-    if (msg.m_time && msg.m_timeout) {
-        ts.c_cc[VTIME] = std::min(msg.m_time, msg.m_timeout);
+    if (msg.m_timeout) {
+        // ignore time and min and do timeout read
+        // qnx can combine both, but we can't on Linux
+        ts.c_cc[VTIME] = msg.m_timeout;
+        ts.c_cc[VMIN] = 0;
     } else {
-        // choose whichever is set
-        ts.c_cc[VTIME] = std::max(msg.m_time, msg.m_timeout);
+        ts.c_cc[VTIME] = msg.m_time;
+        ts.c_cc[VMIN] = msg.m_minimum;
     }
 
     r = tcsetattr(fd, TCSANOW, &ts);

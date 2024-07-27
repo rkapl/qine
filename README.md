@@ -2,6 +2,7 @@
 
 It allows you to run QNX4 binaries on your Linux machine (like Wine). At least some of them.
 
+You can use it to run your QNX4 build on modern HW, without a VM. You can run your build in parallel. You can test. You can have fun.
 
 ## Demo
 [![asciicast](https://asciinema.org/a/msEDHD8S6WESRpJM3LV1DOWPo.svg)](https://asciinema.org/a/620602?autoplay=1)
@@ -47,14 +48,14 @@ Supported:
 - Signals (PIDs are different in Qine)
 - Fork, exec and spawn
 - Terminal (tcgetattr etc.)
+- 16-bit binaries
+- binaries with relocations
 - Basic segment operations, like growing
 
 Not suported (list not complete :)
 - QNX IPC, QNX File Servers
-- 16-bit binaries
 - mmap
 - advanced segment operations
-- binaries with relocations
 
 ## Compilation
 Qine is a standard CMake application. You can build it e.g using:
