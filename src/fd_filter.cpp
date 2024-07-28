@@ -119,7 +119,7 @@ bool TerminalFilter::common_read(MsgContext& ctx, QnxFd& fd, ReadContext& rc, Qn
             deadline |= rc.deadline;
         }
 
-        Log::dbg("read min=%d, timeout=%d\n", (int)rc.min_bytes, rc.deadline.is_set());
+        // Log::dbg("read min=%d, timeout=%d\n", (int)rc.min_bytes, rc.deadline.is_set());
         pollfd pfd = {
             .fd = fd.m_host_fd,
             .events = POLLIN,

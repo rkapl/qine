@@ -22,12 +22,22 @@ To break it down:
 
 ### Slib
 
-Slib32 is a system library needed to run most QNX libraries. Qine does not ship with this library, you need to get it from QNX. You need the actual library and you need to know its entry point and supply it to QNX, using the `--lib/-l` argument.
+Slib is a system library needed to run most QNX libraries. Qine does not ship with this library, you need to get it from QNX. You need the actual library and you need to know its entry point and supply it to QNX, using the `--lib/-l` argument.
 
-So far, I have tested Qine only with the recent Slib from QNX 4.25. This Slib has the `sha256sum` of
-`69e9084c8c41e33df222a0eadbe6122a62536872ebc066a32eaef74be17b83c6` and `entry=0x7D`.
+So far, I have tested Qine only with the recent Slib from QNX 4.25.
+The command-line for the 16-bit and 32-bit versions of Slib libraries looks like this:
+```bash
+--lib $QNX_ROOT/boot/sys/Slib32,sys,entry=0x7d0
+--lib $QNX_ROOT/boot/sys/Slib16,sys16,entry=0x314
+```
 
-If you have a different QNX version, you might be able to use the Slib, even if it is not tested. To get its entry parameter, run the `Slib32` as an exutable and you will get an output like this:
+They have the following sha256sums if you want to verify
+```
+d8ba0072383eecf7ce7b52116f40e1c3430980a1cb12a691c91c4fa9316f2a4a Slib16
+69e9084c8c41e33df222a0eadbe6122a62536872ebc066a32eaef74be17b83c6 Slib32
+```
+
+If you have a different QNX version, you might be able to use the Slib, even if it is not tested. To get its entry parameter, run the `Slib32` or `Slib16` as an exutable and you will get an output like this:
 
 ```
 Attaching name qnx/syslib
@@ -56,6 +66,24 @@ Not suported (list not complete :)
 - QNX IPC, QNX File Servers
 - mmap
 - advanced segment operations
+
+## Terminal support
+
+I assume you are using terminal emulator like xterm. Most modern emulators (Konsole, Gnome-Terminal etc.)
+support the xterm extension and report as xterm.
+
+In that case, you will get things like bash or elvis running pretty succesfully, as QNX has xterm in its terminfo
+database out of the box.
+
+However, the definitions are mediocre and do not match the default xterm behavior in some cases (mouse, alt key reporting).
+I suggest to use the xterm definitions `terminfo.tar.xz`, either by copying it to QNX root, or by specifying `TERMINFO` environment variable.
+
+In my experience, this will get you up and running with stuff like QED or VEDIT. One important thing that will not work is mouse-drag events,
+so you will not be e.g. able to select text or move scrollbars fluently. To overcome this, `qine` comes
+with QNX mouse reporting emulation. Specify `--term-emu` to QINE to get this behavior. It will also override the `TERM` variable
+to something like `xterm-qine`, which is also supplies in our terminfo definitions.
+
+*Note:* Modern definitions from your box cannot be used, as QNX has some "pecularities", e.g. in where it expects the mouse capabilities to go.
 
 ## Compilation
 Qine is a standard CMake application. You can build it e.g using:

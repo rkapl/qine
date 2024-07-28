@@ -511,9 +511,19 @@ void MainHandler::proc_slib_register(MsgContext &i) {
     QnxMsg::proc::slib_register_request msg;
     i.msg().read_type(&msg);
 
-    fprintf(stderr, "Registering shared library %s, offset %x\n", msg.m_data.m_name, msg.m_offset);
-    fprintf(stderr, "You can load the library for your program using:\n  --lib %s,sys,entry=0x%x\n",
-        i.proc().m_executed_file.host_path(), msg.m_offset);
+    uint32_t offset;
+    const char* lib_type;
+    if (i.proc().m_bits == B32) {
+        offset = msg.m_offset;
+        lib_type = "sys";
+    } else {
+        offset = msg.m_offset_3;
+        lib_type = "sys16";
+    }
+
+    fprintf(stderr, "Registering shared library %s, offset %x\n", msg.m_data.m_name, offset);
+    fprintf(stderr, "You can load the library for your program using:\n  --lib %s,%s,entry=0x%x\n",
+        i.proc().m_executed_file.host_path(), lib_type, offset);
 
     i.msg().write_status(Qnx::QEOK);
 }

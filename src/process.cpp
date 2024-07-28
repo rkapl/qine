@@ -69,6 +69,7 @@ void Process::attach_term_emu() {
         auto fd = m_fds.get_open_fd(0);
         if (isatty(fd->m_host_fd)) {
             fd->m_filter = std::make_unique<TerminalFilter>();
+            setenv("TERM", "xterm-qine1", 1);
         }
     } catch (const BadFdException&) {
         // just silently don't attach terminal filter
