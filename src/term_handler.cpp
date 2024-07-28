@@ -1,15 +1,16 @@
+#include <sys/ioctl.h>
 #include <sys/uio.h>
 #include <termios.h>
-#include <sys/ioctl.h>
 
+#include "fd_filter.h"
 #include "gen_msg/dev.h"
-#include "main_handler.h"
-#include "process.h"
-#include "msg.h"
-#include "msg/meta.h"
 #include "log.h"
-#include "qnx/term.h"
+#include "main_handler.h"
+#include "msg.h"
+#include "process.h"
 #include "qnx/ioctl.h"
+#include "qnx/term.h"
+#include "termios_settings.h"
 
 void MainHandler::terminal_qioctl(Ioctl &i) {
     /* unix.a (ioctl) translates lot of calls to the appropriate messages, but we must also handle the IOCTLs*/
@@ -278,7 +279,6 @@ void MainHandler::ioctl_terminal_set_size(Ioctl &i) {
     }
 }
 
-
 void ioctl_terminal_set_size(Ioctl &i);
 
 void MainHandler::dev_tcgetattr(MsgContext &i) {
@@ -333,7 +333,6 @@ void MainHandler::dev_term_size(MsgContext &i) {
     i.msg().write_type(0, &reply);
 }
 
-
 void MainHandler::dev_tcgetpgrp(MsgContext &i) {
     QnxMsg::dev::tcgetpgrp_request msg;
     i.msg().read_type(&msg);
@@ -344,7 +343,6 @@ void MainHandler::dev_tcgetpgrp(MsgContext &i) {
     reply.m_status = handle_tcgetpgrp(i, msg.m_fd, &reply.m_pgrp);
     i.msg().write_type(0, &reply);
 }
-
 
 void MainHandler::dev_tcsetpgrp(MsgContext &i) {
     QnxMsg::dev::tcsetpgrp_request msg;
@@ -370,8 +368,6 @@ void MainHandler::dev_read(MsgContext &i) {
     int r;
     QnxMsg::dev::read_request msg;
     i.msg().read_type(&msg);
-    
-    int fd = i.map_fd(msg.m_fd);
 
     if (msg.m_proxy != 0) {
         Log::print(Log::UNHANDLED, "dev_read with proxies is not supported");
@@ -379,29 +375,20 @@ void MainHandler::dev_read(MsgContext &i) {
         return;
     }
 
-    /* The mapping between vmin and vtime is not correct here but works for termlib */
+    auto fd = i.proc().fds().get_open_fd(msg.m_fd);
+    if (fd->m_filter) {
+        fd->m_filter->dev_read(i,*fd, msg);
+        return;
+    }
 
-    termios ts;
-    r = tcgetattr(fd, &ts);
-    if (r != 0) {
+    TermiosSettings ts(fd->m_host_fd);
+    if (!ts.ok()) {
         i.msg().write_status(Emu::map_errno(errno));
         return;
     }
-    termios ts_orig = ts;
-    
-    ts.c_lflag &= ~ICANON;
-    if (msg.m_timeout) {
-        // ignore time and min and do timeout read
-        // qnx can combine both, but we can't on Linux
-        ts.c_cc[VTIME] = msg.m_timeout;
-        ts.c_cc[VMIN] = 0;
-    } else {
-        ts.c_cc[VTIME] = msg.m_time;
-        ts.c_cc[VMIN] = msg.m_minimum;
-    }
 
-    r = tcsetattr(fd, TCSANOW, &ts);
-    if (r != 0) {
+    ts.from_dev_read(msg);
+    if (!ts.set()) {
         i.msg().write_status(Emu::map_errno(errno));
         return;
     }
@@ -411,7 +398,7 @@ void MainHandler::dev_read(MsgContext &i) {
     std::vector<struct iovec> iov;
     i.msg().write_iovec(sizeof(reply), msg.m_nbytes, iov);
 
-    r = readv(fd, iov.data(), iov.size());
+    r = readv(fd->m_host_fd, iov.data(), iov.size());
     if (r < 0) {
         reply.m_status = Emu::map_errno(errno);
         reply.m_nbytes = 0;
@@ -419,7 +406,6 @@ void MainHandler::dev_read(MsgContext &i) {
         reply.m_status = Qnx::QEOK;
         reply.m_nbytes = r;
     }
-    tcsetattr(fd, TCSANOW, &ts_orig);
     i.msg().write_type(0, &reply);
 }
 
@@ -463,7 +449,7 @@ void MainHandler::dev_mode(MsgContext &i) {
         reply.m_oldmode |= Qnx::DEV_OPOST;
 
     ts.c_lflag &= ~(ECHO | ICANON | ISIG);
-    ts.c_oflag &= ~ OPOST;
+    ts.c_oflag &= ~OPOST;
     // OSFLOW not handled
 
     if (msg.m_mask & Qnx::DEV_ECHO) {
@@ -473,8 +459,8 @@ void MainHandler::dev_mode(MsgContext &i) {
     }
 
     if (msg.m_mask & Qnx::DEV_EDIT) {
-        ts.c_iflag &= ~ (ICRNL | IGNCR | INLCR);
-        ts.c_lflag &= ~ ICANON;
+        ts.c_iflag &= ~(ICRNL | IGNCR | INLCR);
+        ts.c_lflag &= ~ICANON;
 
         if (msg.m_mode & Qnx::DEV_EDIT) {
             ts.c_lflag |= ICANON;

@@ -1,14 +1,10 @@
 #include <dirent.h>
 #include <errno.h>
-#include <iterator>
 #include <stdint.h>
-#include <ios>
 #include <limits>
-#include <stdexcept>
 #include <string.h>
 #include <sys/statvfs.h>
 #include <sys/stat.h>
-#include <system_error>
 #include <termios.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -20,6 +16,7 @@
 #include <vector>
 #include <mntent.h>
 
+#include "fd_filter.h"
 #include "fsutil.h"
 #include "gen_msg/common.h"
 #include "gen_msg/dev.h"
@@ -28,7 +25,6 @@
 #include "gen_msg/io.h"
 #include "mem_ops.h"
 #include "msg.h"
-#include "msg/meta.h"
 #include "process.h"
 #include "msg_handler.h"
 #include "main_handler.h"
@@ -39,7 +35,6 @@
 #include "qnx/osinfo.h"
 #include "qnx/procenv.h"
 #include "qnx/psinfo.h"
-#include "qnx/sem.h"
 #include "qnx/signal.h"
 #include "qnx/stat.h"
 #include "qnx/timers.h"
@@ -1612,20 +1607,25 @@ void MainHandler::io_read(MsgContext &i) {
     QnxMsg::io::read_request msg;
     i.msg().read_type(&msg);
 
-    std::vector<struct iovec> iov;
-    i.msg().write_iovec(sizeof(msg), msg.m_nbytes, iov);
-
-    QnxMsg::io::read_reply reply;
-    int r = readv(i.map_fd(msg.m_fd), iov.data(), iov.size());
-    reply.m_zero = 0;
-    if (r < 0) {
-        reply.m_status = errno;
-        reply.m_nbytes = 0;
+    auto fd = i.proc().fds().get_open_fd(msg.m_fd);
+    if (fd->m_filter) {
+        fd->m_filter->read(i, *fd, msg);
     } else {
-        reply.m_status = Qnx::QEOK;
-        reply.m_nbytes = r;
+        std::vector<struct iovec> iov;
+        i.msg().write_iovec(sizeof(msg), msg.m_nbytes, iov);
+
+        QnxMsg::io::read_reply reply;
+        int r = readv(i.map_fd(msg.m_fd), iov.data(), iov.size());
+        reply.m_zero = 0;
+        if (r < 0) {
+            reply.m_status = errno;
+            reply.m_nbytes = 0;
+        } else {
+            reply.m_status = Qnx::QEOK;
+            reply.m_nbytes = r;
+        }
+        i.msg().write_type(0, &reply);
     }
-    i.msg().write_type(0, &reply);
 }
 
 void MainHandler::io_write(MsgContext &i) {

@@ -4,32 +4,36 @@
 # Moder xterm, but needs some tweaks, for mouse, alt keys etc
 # This is definitely still wrong, but works somewhat
 #
-# Daisy is ab/used to enable mouse support somehow
+# Daisy is ab/used to signal qnx extensions
+# Crxm disables console writes
+#
 # maddr=2 specifies xterm style report parsing, but vedit still does not like it
 # https://www.qnx.com/developers/docs/6.3.0SP3/neutrino/qed_manual/terminals.html
 #
 # Unmapped keys: kctab, keypad keys,
 #
 xterm|xterm-256-color|QNX xterm, but in application mode with fixed keys,
-	am, xenl, km, mir, msgr, daisy,
+	am, bce, xenl, km, mc5i, mir, msgr, npc, daisy, crxm,
 	cols#80, it#8, lines#65,
 # Control
  	bel=^g, cr=\r, csr=\E[%i%p1%d;%p2%dr, tbc=\E[3g,
 	clear=\E[H\E[2J, el=\E[K, ed=\E[J, cup=\E[%i%p1%d;%p2%dH,
 	cud1=\E[B, home=\E[H, cub1=\b, cuf1=\E[C, cuu1=\E[A,
-	dch1=\E[P, dl1=\E[M, smacs=^n, blink=@, bold=\E[1m,
+	dch1=\E[P, dl1=\E[M, smacs=\E(0, blink=@, bold=\E[1m,
 	dch=\E[%p1%dP, dl=\E[%p1%dM,
 	cud=\E[%p1%dB, ich=\E[%p1%d@, il=\E[%p1%dL, cub=\E[%p1%dD,
 	cuf=\E[%p1%dC, cuu=\E[%p1%dA,
-	rev=\E[7m, smso=\E[7m, rmacs=^o, sgr0=\E[m, rmso=\E[m,
+	rev=\E[7m, smso=\E[7m, rmacs=\E(B, sgr0=\E[m, rmso=\E[m,
 	is1=\E=\E[?1l, ich1=\E[2~, il1=\E[L,
 	kbs=\b,
 	rs1=\Ec, rs2=\E[!p\E[?3;4l\E[4l\E>, rc=\E8,
 	sc=\E7, ind=\l, ri=\EM,
 	sgr=\E[0%?%p1%p6%|%t;1%;%?%p2%t;4%;%?%p1%p3%|%t;7%;%?%p4%t;5%;m,
 	hts=\EH, ht=\t, 
-	acsc=``aaffggjjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~Oa,
+	acsc=``aaffggiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~,
 	smam=\E[?7h, rmam=\E[?7l, enacs=\E(B\E)0,
+# Enable application mode
+	smkx=\E[?1h\E=, rmkx=\E[?1l\E>,
 # Inser/delete
 	kdch1=\E[3~, kdl1=\E[3;5~, kich1=\E[2~, kil1=\E[2;5~,
 # Cursor and pagination
@@ -64,6 +68,17 @@ xterm|xterm-256-color|QNX xterm, but in application mode with fixed keys,
 	kf8=\E[19~, kf9=\E[20~,
 	setf=\E[3%?%p1%{1}%=%t4%e%p1%{3}%=%t6%e%p1%{4}%=%t1%e%p1%{6}%=%t3%e%p1%d%;m,
 	setb=\E[4%?%p1%{1}%=%t4%e%p1%{3}%=%t6%e%p1%{4}%=%t1%e%p1%{6}%=%t3%e%p1%d%;m,
-	mcub=\E[?1000h, mcud=\E[?1000h, mcuu=\E[?1000h,
-	mcuf=\E[?1000h, mcud1=\E[?1000l, chr=\E[M, maddr#2,
-	smkx=\E[?1h\E=, rmkx=\E[?1l\E>,
+# mcub, mcud, mcuf= enable buttons
+	mcub=\E[?1000h, mcud=\E[?1000h, mcuf=\E[?1000h, 
+# mcud1 = disable buttons
+	mcud1=\E[?1000l,
+# mcuu/mcuu1 = enable/disable mouse release events
+	mcuu=\E[?1000h, mcuu1=\E[?1000h,
+	chr=\E[M, maddr#2,
+# QINE translates the xterm mouse messages to QNX ones. We enable motion tracking for that.
+xterm-qine1|QNX xterm, with original QNX mouse events
+	maddr#1,
+	chr=\E[, cvr=\E],
+# mcub1/mcuf1 = control mouse drag events
+	mcub1=\E[?1002h, mcuf1=\E[?1002h,
+	use=xterm

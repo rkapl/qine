@@ -40,7 +40,9 @@ public:
     template<class T> void write_type(size_t offset, const T* src);
     void write_status(uint16_t status);
 
+    /** Get IOVEC for writing into the message */
     void write_iovec(size_t offset, size_t size, std::vector<iovec>& dst);
+    /** Get IOVEC for reading from the message */
     void read_iovec(size_t offset, size_t size, std::vector<iovec>& dst);
 
     void dump_send(FILE *f);

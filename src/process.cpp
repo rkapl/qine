@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <vector>
 
+#include "fd_filter.h"
 #include "gen_msg/dev.h"
 #include "gen_msg/fsys.h"
 #include "gen_msg/io.h"
@@ -58,12 +59,23 @@ void Process::initialize() {
     m_startup_context = GuestContext(&m_startup_context_main, &m_startup_context_extra);
     memset(&m_startup_context_main, 0xcc, sizeof(m_startup_context_main));
     memset(&m_startup_context_extra, 0xcc, sizeof(m_startup_context_extra));
+    m_fds.scan_host_fds(m_current->nid(), 1, 1);
+    m_emu.init();
+    initialize_pids();
+}
+
+void Process::attach_term_emu() {
+    try {
+        auto fd = m_fds.get_open_fd(0);
+        if (isatty(fd->m_host_fd)) {
+            fd->m_filter = std::make_unique<TerminalFilter>();
+        }
+    } catch (const BadFdException&) {
+        // just silently don't attach terminal filter
+    }
 }
 
 void Process::initialize_2() {
-    m_emu.init();
-    m_fds.scan_host_fds(m_current->nid(), 1, 1);
-    initialize_pids();
 }
 
 void Process::initialize_self_call(std::vector<std::string>&& self_call) {

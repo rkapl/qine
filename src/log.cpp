@@ -16,6 +16,16 @@ void Log::print(Category c, const char *format, ...)
     va_end(v);
 }
 
+void Log::dbg(const char *format, ...)  
+{
+    va_list v;
+    va_start(v, format);
+    if_enabled(Log::DEBUG, [format, &v] (FILE* out) {
+        vfprintf(out, format, v);
+    });
+    va_end(v);
+}
+
 void Log::enable(Category c, bool enabled) {
     m_enabled &= ~log_mask(c);
     if (enabled) {
@@ -24,6 +34,9 @@ void Log::enable(Category c, bool enabled) {
 }
 
 Log::Category Log::by_name(const char *name) {
+    if (strcmp(name, "debug") == 0) {
+        return DEBUG;
+    }
     if (strcmp(name, "msg") == 0) {
         return MSG;
     }

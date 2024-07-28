@@ -39,11 +39,13 @@ int opt_no_slib;
 namespace Opt {
     enum {
         EXEC = 200,
+        TERM_EMU,
     };
 }
 
 static struct option cmd_options[] = {
     {"help", no_argument, 0, 'h'},
+    {"term-emu", no_argument, 0, Opt::TERM_EMU},
     {"debug", required_argument, 0, 'd'},
     {"map", required_argument, 0, 'm'},
     {"lib", required_argument, 0, 'l'},
@@ -91,6 +93,9 @@ int main(int argc, char **argv) {
                     break;
                 case Opt::EXEC:
                     opt_exec = optarg;
+                    break;
+                case Opt::TERM_EMU:
+                    proc->attach_term_emu();
                     break;
                 default:
                     fprintf(stderr, "getopt unknown code 0x%x\n", c);

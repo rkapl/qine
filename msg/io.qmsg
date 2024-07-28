@@ -57,7 +57,7 @@ msg read {
    reply {
         status: u16;
         nbytes: u16 hex;
-        zero: u16;
+        zero: u32;
    }
 }
 

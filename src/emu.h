@@ -26,6 +26,7 @@ public:
     void signal_raise(int qnx_sig);
     void signal_mask(uint32_t change_mask, uint32_t bits);
     uint32_t signal_getmask();
+    bool should_preempt(Qnx::errno_t* errno_out) const;
 
     static void debug_hook_problem();
     static void debug_hook_sig_enter();

@@ -41,6 +41,7 @@ class Process{
 public:
     static inline Process* current();
     static Process* create();
+    void attach_term_emu();
     void initialize_2();
     void initialize_self_call(std::vector<std::string>&& self_call);
 
@@ -70,6 +71,7 @@ public:
     bool slib_loaded() const { return m_slib_entry != 0; }
     const std::vector<std::string>& self_call() const;
     const PathInfo& executed_file() const;
+    Emu& emu() { return m_emu; }
 
     void set_errno(int v);
 

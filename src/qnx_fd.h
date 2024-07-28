@@ -10,6 +10,7 @@
 #include <string>
 
 class QnxFd;
+class FdFilter;
 
 class BadFdException : public std::exception {};
 
@@ -52,14 +53,14 @@ class FdMap {
     IdMap<QnxFd> m_fds;
 };
 
-/* Attached FD. Need not be opened FD. */
+/* Attached FD. Need not be opened FD. Currently we alwayas have a backing host FD*/
 class QnxFd {
   public:
     QnxFd(Qnx::fd_t fd, Qnx::nid_t nid, Qnx::mpid_t pid, Qnx::mpid_t vid,
           uint16_t flags);
     ~QnxFd();
 
-    // Assign a host fd (after remapig) and mark open.
+    // Assign a host fd (after remaping) and mark open.
     // errno if false
     bool assign_fd(UniqueFd &&host_fd);
     bool close();
@@ -70,7 +71,7 @@ class QnxFd {
 
     bool is_close_on_exec();
 
-    /* QNX information, we do not use all that, be we store it during attach*/
+    /* QNX information, we do not use all that, be we store it during attach */
     int m_fd;
 
     Qnx::nid_t m_nid;
@@ -88,6 +89,7 @@ class QnxFd {
     int m_host_fd;
     // if readdir was used, we allocate DIR*
     DIR *m_host_dir;
+    std::unique_ptr<FdFilter> m_filter;
 };
 
 QnxFd *FdMap::get_open_fd(Qnx::fd_t fdi) {

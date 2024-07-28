@@ -4,8 +4,6 @@
 #include <stdint.h>
 #include <stdio.h>
 
-
-
 class Log {
 public:
     enum Category {
@@ -17,8 +15,10 @@ public:
         MAP,
         FD,
         SIG,
+        DEBUG, // for temporary debugging prints
     };
 
+    static void dbg(const char *format, ...) __attribute__((format(printf, 1, 2)));
     static void print(Category c, const char *format, ...) __attribute__((format(printf, 2, 3)));
     static void enable(Category c, bool enabled);
     static Category by_name(const char *name);

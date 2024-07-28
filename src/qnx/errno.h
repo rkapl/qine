@@ -1,8 +1,10 @@
 #pragma once
 
+#include <stdint.h>
+
 namespace Qnx {
 
-using errno_t = int;
+using errno_t = uint16_t;
 /* --- Symbolic names of the error return conditions --- */
 
 constexpr errno_t QEOK = 0;       /* No error                                 */

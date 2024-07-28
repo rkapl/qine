@@ -1,6 +1,7 @@
 #include "qnx_fd.h"
 #include "log.h"
 #include "unique_fd.h"
+#include "fd_filter.h"
 #include <fcntl.h>
 #include <stdexcept>
 #include <iostream>

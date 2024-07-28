@@ -23,6 +23,7 @@ add_executable(qine
   src/intrusive_list.h
   src/qine.cpp
   src/emu.cpp src/emu.h
+  src/fd_filter.h src/fd_filter.cpp
   src/fsutil.h src/fsutil.cpp
   src/guest_context.cpp src/guest_context.h
   src/loader.h src/loader.cpp src/loader_format.h
@@ -36,6 +37,8 @@ add_executable(qine
   src/qnx_sigset.h src/qnx_sigset.cpp
   src/segment.h src/segment.cpp
   src/segment_descriptor.h src/segment_descriptor.cpp
+  src/termios_settings.h src/termios_settings.cpp
+  src/timespec.h src/timespec.cpp
   src/msg.h src/msg.cpp
   src/util.h src/util.cpp
   src/msg/meta.h src/msg/meta.cpp

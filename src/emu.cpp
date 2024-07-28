@@ -198,6 +198,18 @@ bool Emu::is_special_sighandler(uint32_t qnx_handler) {
         || qnx_handler == Qnx::QSIG_IGN;
 }
 
+bool Emu::should_preempt(Qnx::errno_t* errno_out) const {
+    QnxSigset activesig = m_sigpend;
+    activesig.modify(m_sigmask, QnxSigset::empty());
+
+    if (activesig.is_empty()) {
+        return false;
+    } else {
+        *errno_out = Qnx::QEINTR;
+        return true;
+    }
+}
+
 /* 
  * This functions is called on exit from a host signal and is responsible 
  * for setting up QNX signal state if there is a pending signal.
