@@ -218,6 +218,8 @@ bool Emu::should_preempt(Qnx::errno_t* errno_out) const {
  */
 qine_no_tls void Emu::signal_tail(GuestContext& ctx) {
     auto proc = ctx.proc();
+    proc->update_timesel();
+
     QnxSigset activesig = m_sigpend;
     activesig.modify(m_sigmask, QnxSigset::empty());
 

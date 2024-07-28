@@ -54,4 +54,15 @@ namespace Qnx {
         uint32_t        cpu_features;
         uint16_t       zero5[13];
     } qine_attribute_packed;
+
+    struct timesel {
+        int32_t nsec;
+        int32_t seconds;
+        int32_t nsec_inc;
+        uint32_t cycles_per_sec;
+        uint32_t cycle_lo;
+        uint32_t cycle_hi;
+        uint32_t cnt8254;    
+        uint16_t spare[2];
+    };
 }

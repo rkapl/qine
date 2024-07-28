@@ -18,6 +18,7 @@
 #include "path_mapper.h"
 #include "qnx/magic.h"
 #include "qnx/msg.h"
+#include "qnx/osinfo.h"
 #include "qnx/procenv.h"
 #include "qnx/types.h"
 
@@ -401,6 +402,20 @@ void Process::push_pointer_block(const std::vector<GuestPtr>& block) {
     }
 }
 
+void Process::update_timesel() {
+    auto t = reinterpret_cast<Qnx::timesel*>(m_time_segment->pointer(0, sizeof(Qnx::timesel)));
+    Timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    t->cnt8254 = 0;
+    t->seconds = now.tv_sec;
+    t->nsec = now.tv_nsec;
+    t->nsec_inc = 0;
+    t->cycles_per_sec = 1000;
+    int64_t cycles = t->seconds * 1000 + static_cast<int64_t>(now.tv_nsec) / 1000 / 1000;
+    t->cycle_lo = cycles;
+    t->cycle_hi = cycles >> 32;
+}
+
 void Process::setup_startup_context(int argc, char **argv)
 {
     auto& ctx = m_startup_context;
@@ -432,9 +447,10 @@ void Process::setup_startup_context(int argc, char **argv)
     }
 
     /* Create time segment so that we do not crash, but we do not fill the time yet */
+    // TODO: make the segment non-accessible and enable signal if some is reading it
     m_time_segment = allocate_segment();
     m_time_segment->reserve(MemOps::PAGE_SIZE);
-    m_time_segment->grow_bytes(0x20);
+    m_time_segment->grow_bytes(sizeof(Qnx::timesel));
 
     m_time_segment_selector =  create_segment_descriptor(Access::READ_ONLY, m_time_segment, B32)->id();
 

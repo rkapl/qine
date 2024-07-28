@@ -57,6 +57,8 @@ public:
     PidMap& pids() {return m_pids;}
     PathMapper& path_mapper() {return m_path_mapper;}
 
+    void update_timesel();
+
     void setup_startup_context(int argc, char **argv);
     void enter_emu();
 
