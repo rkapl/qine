@@ -9,10 +9,10 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/ucontext.h>
+#include <sys/mman.h>
 
 #include "process.h"
 #include "segment.h"
-#include "unique_fd.h"
 #include "mem_ops.h"
 #include "loader_format.h"
 #include "segment_descriptor.h"
@@ -112,10 +112,10 @@ void FlatLoader::finalize_segments() {
     // Guard page(s) before stack
     m_mem->skip_paged(m_skip);
     // Stack, data and heap (later)
-    m_mem->grow_paged(Access::READ_WRITE, m_stack);
-    m_mem->grow_paged(Access::READ_WRITE, m_segment_pos - m_image_base);
+    m_mem->grow_paged(PROT_READ | PROT_WRITE, m_stack);
+    m_mem->grow_paged(PROT_READ | PROT_WRITE, m_segment_pos - m_image_base);
     auto heap_start = m_mem->size();
-    m_mem->grow_paged(Access::READ_WRITE, hdr->heap_nbytes);
+    m_mem->grow_paged(PROT_READ | PROT_WRITE, hdr->heap_nbytes);
 
     auto load = m_ctx->m_info;
     load->stack_low = m_skip;
@@ -128,7 +128,7 @@ void FlatLoader::finalize_loading() {
     // protect the segments & create selectors
     for (uint32_t si = 0;  si < m_segments.size(); ++si) {
         const auto& seg = m_segments[si];
-        m_mem->change_access(seg.type, seg.start, seg.size);
+        m_mem->change_access(Segment::map_prot(seg.type), seg.start, MemOps::align_page_up(seg.size));
     }
 }
 
@@ -146,7 +146,6 @@ void* FlatLoader::prepare_segment_load(const lmf_data& ld, size_t file_offset, s
 
 struct LoadedSegment {
     std::shared_ptr<Segment> segment;
-    Access final_access;
 };
 
 struct SegmentLoader: public AbstractLoader {
@@ -180,7 +179,6 @@ void SegmentLoader::alloc_segment(uint32_t id, Access access, uint32_t size) {
     }
     seg->grow_bytes(size);
     m_segments[id].segment = seg;
-    m_segments[id].final_access = access;
     Log::print(Log::LOADER, "segment %d: size=%x, type=%x, linear=%x\n", id, size, access, seg->location());
 }
 
@@ -195,11 +193,11 @@ void SegmentLoader::finalize_segments() {
 
     auto stack_seg = m_segments[hdr->stack_index].segment.get();
     auto stack_start = stack_seg->size();
-    stack_seg->grow_bytes(hdr->stack_nbytes);
+    stack_seg->grow_bytes_64capped(hdr->stack_nbytes);
 
     auto heap_seg = m_segments[hdr->heap_index].segment.get();
     auto heap_start = heap_seg->size();
-    heap_seg->grow_bytes(hdr->heap_nbytes);
+    heap_seg->grow_bytes_64capped(hdr->heap_nbytes);
 
     auto load = m_ctx->m_info;
     load->stack_low = stack_start;
@@ -218,7 +216,7 @@ void * SegmentLoader::prepare_segment_load(const lmf_data& ld, size_t file_offse
 void SegmentLoader::finalize_loading() {
     for(size_t si = 0; si < m_segments.size(); si++) {
         auto &seg = m_segments[si];
-        seg.segment->change_access(seg.final_access, 0, seg.segment->size());
+        // leave protection RWX for segment loading
     }
 }
 
@@ -356,6 +354,8 @@ void loader_load(int fd, LoadInfo *info_out, bool slib) {
             void *dst = loader->prepare_segment_load(ld, offset, data_size);
             checked_read("loader: load data", fd, dst, data_size);
             need_skip = false;
+        } else {
+            // Log::dbg("Unsupported record: %x\n", rec.rec_type);
         }
 
         if (need_skip) {
@@ -397,7 +397,7 @@ void loader_load(int fd, LoadInfo *info_out, bool slib) {
             throw LoaderFormatException("relocation out of range");
         }
         uint16_t relocated_value = selectors[segment];
-        //printf("reloc %04x:%08x -- %x => %x\n", r.segment, r.reloc_offset, *reloc_what, relocated_value);
+        //Log::dbg("reloc %04x:%08x -- %x => %x\n", r.segment, r.reloc_offset, *reloc_what, relocated_value);
         (*reloc_what) = relocated_value;
     }
 }

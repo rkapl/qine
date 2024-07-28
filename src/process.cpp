@@ -228,6 +228,17 @@ void* Process::translate_segmented(FarPointer ptr, uint32_t size, RwOp write)
     return sd->segment()->pointer(ptr.m_offset, size);
 }
 
+void Process::debug_dump_segments() {
+    auto& sdmap = m_current->m_segment_descriptors;
+    int i = 0;
+    while ((i = (sdmap.search(i, true))) != IdMap<SegmentDescriptor>::INVAL) {
+        auto sd = sdmap[i];
+        fprintf(stderr, "sel %x: size %04zx, access %x, %08x,\n", SegmentDescriptor::mk_sel(sd->id()), 
+            sd->segment()->size(), (int)sd->access(), sd->segment()->location());
+        i++;
+    }
+}
+
 std::shared_ptr<Segment> Process::allocate_segment() {
     auto seg = std::make_shared<Segment>();
     m_segments.add_front(seg.get());
@@ -246,6 +257,10 @@ SegmentDescriptor* Process::create_segment_descriptor_at(Access access, const st
 
 SegmentDescriptor* Process::descriptor_by_selector(uint16_t id) {
     return m_segment_descriptors[id >> 3];
+}
+
+void Process::free_segment_descriptor(SegmentDescriptor *sd) {
+    m_segment_descriptors.free(sd->id());
 }
 
 void Process::set_errno(int v) {

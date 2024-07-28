@@ -219,6 +219,21 @@ msg segment_realloc {
     reply segment_reply;
 }
 
+msg segment_free {
+    type: 9;
+    subtype: 4;
+    request segment_request;
+    reply segment_reply;
+}
+
+msg segment_flags {
+    type: 9;
+    subtype: 7;
+
+    request segment_request;
+    reply segment_reply;
+}
+
 msg segment_global {
     type: 9;
     subtype: 9;

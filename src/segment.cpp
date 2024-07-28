@@ -9,6 +9,9 @@
 
 #define DEBUG_ALL_WRITEABLE
 
+// TODO: "Modern" Qnx seems to allocate segments in page sizes, with exceptions like magic segment
+// Maybe switch to that? 16-bit loader still works on byte granularity
+
 Segment::Segment(): 
     m_location(nullptr), 
     m_paged_size(0), m_limit_size(0), m_reserved(0), m_shared(false)
@@ -71,9 +74,10 @@ int Segment::map_prot(Access access)
     return prot;
 }
 
-void Segment::grow_paged(Access access, size_t size) {
-    grow_paged_internal(access, size);
+void Segment::grow_paged(int prot, size_t size) {
+    grow_paged_internal(prot, size);
     m_limit_size = paged_size();
+    //Log::dbg("Grown segment to %zx / %zx\n", m_paged_size, m_limit_size);
 }
 
 void Segment::grow_bytes(size_t size)
@@ -82,14 +86,23 @@ void Segment::grow_bytes(size_t size)
         throw std::bad_alloc();
     }
 
+    /* QNX Handles access mostly on segment level */
     if (size + m_limit_size > m_paged_size) {
-        grow_paged_internal(Access::READ_WRITE, MemOps::align_page_up(size));
+        grow_paged_internal(PROT_READ | PROT_WRITE | PROT_EXEC, MemOps::align_page_up(size + m_limit_size) - m_paged_size);
     }
 
     m_limit_size += size;
+    //Log::dbg("Grown segment to %zx / %zx\n", m_paged_size, m_limit_size);
 }
 
-void Segment::grow_paged_internal(Access access, size_t size)
+void Segment::grow_bytes_64capped(size_t size) {
+    auto new_size = std::min(m_limit_size + size, MemOps::kilo(64));
+    if (new_size > m_limit_size) {
+        grow_bytes(new_size - m_limit_size);
+    }
+}
+
+void Segment::grow_paged_internal(int prot, size_t size)
 {
     assert(MemOps::is_page_aligned(size));
 
@@ -97,7 +110,6 @@ void Segment::grow_paged_internal(Access access, size_t size)
         throw std::bad_alloc();
     }
 
-    int prot = map_prot(access);
     void *start = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(m_location) + m_paged_size);
     void *l = mmap(start, size, prot, MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0);
     if (l == MAP_FAILED) {
@@ -126,9 +138,11 @@ void Segment::skip_paged(size_t new_size)
     m_paged_size += new_size;
 }
 
-void Segment::change_access(Access access, size_t offset, size_t size)
+void Segment::change_access(int prot, size_t offset, size_t size)
 {
-    int r = mprotect(pointer(offset, size), size, map_prot(access));
+    auto ptr = pointer(offset, size);
+    //Log::dbg("mprotect %d %zx-%zx (=%p)\n", prot, offset, offset+size, ptr);
+    int r = mprotect(ptr, size, prot);
     assert(r == 0);
 }
 

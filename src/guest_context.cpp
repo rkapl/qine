@@ -94,11 +94,11 @@ void GuestContext::dump(FILE *s, size_t stack) {
     auto ip = reg_eip();
     try {
         auto linear = translate(GuestContext::CS, ip, 0);
-        fprintf(s, "context %x:%x, linear %p\n", cs, ip, linear);
+        fprintf(s, "ip %x:%x, linear %p\n", cs, ip, linear);
     } catch (const GuestStateException& e) {
-        fprintf(s, "context %x:%x, %s\n", cs, ip, e.what());
+        fprintf(s, "ip %x:%x, %s\n", cs, ip, e.what());
     } catch (const SegmentationFault&) {
-        fprintf(s, "context %x:%x, linear unavailable\n", cs, ip);
+        fprintf(s, "ip %x:%x, linear unavailable\n", cs, ip);
     }
 
     fprintf(s, "EAX: %08X  EBX: %08x  ECX: %08X  EDX: %08X\n",
@@ -116,6 +116,8 @@ void GuestContext::dump(FILE *s, size_t stack) {
     fprintf(s, "CS: %04X  SS: %04X  DS: %04X  ES: %04X FS: %04X GS: %04X\n",
         reg_cs(), reg_ss(), reg_ds(), reg_es(), reg_fs(), reg_gs()
     );
+
+    fprintf(s, "CR2: %04X TRAPNO: %04X ERR: %04X\n", greg(REG_CR2), greg(REG_TRAPNO), greg(REG_ERR));
 
     if (stack == 0)
         stack = 16;

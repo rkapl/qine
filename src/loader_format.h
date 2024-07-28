@@ -63,7 +63,7 @@ struct lmf_header {
     uint16_t     fpu;            // 0, 87,287,387
     uint16_t     code_index;     // segment of code start;
     uint16_t     stack_index;    // segment to put the stack
-    uint16_t     heap_index;     // segment to start DS at.
+    uint16_t     heap_index;     // segment to start DS at and where to place aux info
     uint16_t     argv_index;     // segment to put argv & environment.
     uint16_t     spare2[4];      // must be zero;
     uint32_t     code_offset;    // starting offset of code.

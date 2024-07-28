@@ -51,11 +51,12 @@ public:
     SegmentDescriptor* create_segment_descriptor(Access access, const std::shared_ptr<Segment>& mem, Bitness bits);
     SegmentDescriptor* create_segment_descriptor_at(Access access, const std::shared_ptr<Segment>& mem, Bitness bits, SegmentId id);
     void* translate_segmented(FarPointer ptr, uint32_t size = 0, RwOp op = RwOp::READ);
+    static void debug_dump_segments();
+
     FdMap& fds() {return m_fds;}
     PidMap& pids() {return m_pids;}
     PathMapper& path_mapper() {return m_path_mapper;}
 
-    void push_pointer_block(const std::vector<GuestPtr>& block);
     void setup_startup_context(int argc, char **argv);
     void enter_emu();
 
@@ -83,6 +84,9 @@ private:
     ~Process();
 
     SegmentDescriptor* descriptor_by_selector(uint16_t id);
+    void free_segment_descriptor(SegmentDescriptor *sd);
+    void push_pointer_block(const std::vector<GuestPtr>& block);
+
     void setup_magic(SegmentDescriptor *data_sd, StartupSbrk& alloc);
     void setup_magic16(SegmentDescriptor *data_sd, StartupSbrk& alloc);
     void initialize();

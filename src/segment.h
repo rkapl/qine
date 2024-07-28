@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <vector>
+#include <sys/mman.h>
 #include "cpp.h"
 #include "types.h"
 #include "intrusive_list.h"
@@ -24,10 +25,11 @@ public:
 
     void reserve(size_t reservation);
     void reserve_at(size_t reservation, uintptr_t addr);
-    void change_access(Access access, size_t offset, size_t size);
-    void grow_paged(Access access, size_t size);
+    void change_access(int prot, size_t offset, size_t size);
+    void grow_paged(int prot, size_t size);
     /**  Grow the limit by X bytes, optionally allocating new pages of READ_WRITE */
-    void grow_bytes(size_t new_size);
+    void grow_bytes(size_t size);
+    void grow_bytes_64capped(size_t size);
     void skip_paged(size_t skip);
 
     bool check_bounds(size_t offset, size_t size) const;
@@ -45,10 +47,10 @@ public:
 
     void make_shared();
     bool is_shared() const;
+    static int map_prot(Access access);
 private:
     /* Does not update limit size */
-    void grow_paged_internal(Access access, size_t size);
-    static int map_prot(Access access);
+    void grow_paged_internal(int prot, size_t size);
     void update_descriptors();
     
     void *m_location;

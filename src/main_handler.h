@@ -32,6 +32,8 @@ private:
     void proc_slib_register(MsgContext &i);
     void proc_segment_realloc(MsgContext &i);
     void proc_segment_alloc(MsgContext &i);
+    void proc_segment_free(MsgContext &i);
+    void proc_segment_flags(MsgContext &i);
     void proc_segment_put(MsgContext &i);
     void proc_segment_arm(MsgContext &i);
     void proc_segment_priv(MsgContext &i);

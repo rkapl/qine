@@ -35,6 +35,7 @@
 #include "qnx/osinfo.h"
 #include "qnx/procenv.h"
 #include "qnx/psinfo.h"
+#include "qnx/segment.h"
 #include "qnx/signal.h"
 #include "qnx/stat.h"
 #include "qnx/timers.h"
@@ -77,6 +78,12 @@ void MainHandler::receive_inner(MsgContext& i) {
                 break;
                 case QnxMsg::proc::msg_segment_alloc::SUBTYPE:
                     proc_segment_alloc(i);
+                break;
+                case QnxMsg::proc::msg_segment_free::SUBTYPE:
+                    proc_segment_free(i);
+                break;
+                case QnxMsg::proc::msg_segment_flags::SUBTYPE:
+                    proc_segment_flags(i);
                 break;
                 case QnxMsg::proc::msg_segment_put::SUBTYPE:
                     proc_segment_put(i);
@@ -541,7 +548,8 @@ void MainHandler::proc_segment_alloc(MsgContext& i)
     }
     seg->grow_bytes(nbytes);
 
-    auto sd = i.ctx().proc()->create_segment_descriptor(Access::READ_WRITE, seg, B32);
+    // segment inherits Process bitness in case it is a code segment
+    auto sd = i.ctx().proc()->create_segment_descriptor(Access::READ_WRITE, seg, i.proc().m_bits);
     
     QnxMsg::proc::segment_reply reply;
     memset(&reply, 0, sizeof(reply));
@@ -557,20 +565,23 @@ void MainHandler::proc_segment_realloc(MsgContext& i)
 {
     QnxMsg::proc::segment_request msg;
     i.msg().read_type(&msg);
-    // TODO: handle invalid segments
-    auto sd  = i.ctx().proc()->descriptor_by_selector(msg.m_sel);
-    auto seg = sd->segment();
-    GuestPtr base = seg->paged_size();
-
     QnxMsg::proc::segment_reply reply;
-    memset(&reply, 0, sizeof(reply));
+    clear(&reply);
+
+    auto sd  = i.ctx().proc()->descriptor_by_selector(msg.m_sel);
+    if (!sd) {
+        reply.m_status = Qnx::QEINVAL;
+        i.msg().write_type(0, &reply);
+        return;
+    }
+    auto seg = sd->segment();
     if (seg->is_shared()) {
         reply.m_status = Qnx::QEBUSY;
     } else {
         if (seg->size() < msg.m_nbytes) {
-            seg->grow_paged(Access::READ_WRITE, MemOps::align_page_up(msg.m_nbytes - seg->size()));
-            // TODO: this must be done better, the segment must be aware of its descriptors,
-            // at least code and data 
+            seg->grow_bytes(msg.m_nbytes - seg->size());
+            // TODO: this must be done better, the segment must be aware of its descriptors
+            // or have better understanding how it works on QNX
             sd->update_descriptors();
         }
         reply.m_status = Qnx::QEOK;
@@ -582,17 +593,58 @@ void MainHandler::proc_segment_realloc(MsgContext& i)
     i.msg().write_type(0, &reply);
 }
 
+void MainHandler::proc_segment_free(MsgContext& i) {
+    QnxMsg::proc::segment_request msg;
+    i.msg().read_type(&msg);
+    QnxMsg::proc::segment_reply reply;
+    clear(&reply);
+
+    auto sd  = i.ctx().proc()->descriptor_by_selector(msg.m_sel);
+    if (!sd) {
+        reply.m_status = Qnx::QEINVAL;
+        i.msg().write_type(0, &reply);
+        return;
+    }
+
+    i.ctx().proc()->free_segment_descriptor(sd);
+    i.msg().write_type(0, &reply);
+}
+
+void MainHandler::proc_segment_flags(MsgContext &i) {
+    QnxMsg::proc::segment_request msg;
+    i.msg().read_type(&msg);
+    QnxMsg::proc::segment_reply reply;
+    clear(&reply);
+
+    auto sd  = i.ctx().proc()->descriptor_by_selector(msg.m_sel);
+    if (!sd) {
+        reply.m_status = Qnx::QEINVAL;
+        i.msg().write_type(0, &reply);
+        return;
+    }
+
+    // other flags not handled yet
+    sd->change_access(static_cast<Access>(msg.m_flags & Qnx::PMF_ACCESS_MASK));
+    sd->update_descriptors();
+    reply.m_flags = msg.m_flags;
+    reply.m_sel = msg.m_flags;
+    i.msg().write_type(0, &reply);
+}
+
 void MainHandler::proc_segment_arm(MsgContext& i) {
     // mark segment as global, called during Slib startup
+    Log::print(Log::UNHANDLED, "segment_arm is a stub\n");
     i.msg().write_status(Qnx::QEOK);
 }
 
 void MainHandler::proc_segment_put(MsgContext& i) {
+    Log::print(Log::UNHANDLED, "segment_put is a stub\n");
     // mark segment as global, called during Slib startup
     i.msg().write_status(Qnx::QEOK);
 }
 
 void MainHandler::proc_segment_priv(MsgContext& i) {
+    Log::print(Log::UNHANDLED, "segment_priv is a stub\n");
     // mark segment as global, called during Slib startup
     i.msg().write_status(Qnx::QEOK);
 }
@@ -1621,6 +1673,7 @@ void MainHandler::io_read(MsgContext &i) {
     if (fd->m_filter) {
         fd->m_filter->read(i, *fd, msg);
     } else {
+        // Log::dbg("Reading from %lx\n", lseek(fd->m_host_fd, 0, SEEK_CUR));
         std::vector<struct iovec> iov;
         i.msg().write_iovec(sizeof(msg), msg.m_nbytes, iov);
 

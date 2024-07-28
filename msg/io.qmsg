@@ -51,7 +51,7 @@ msg read {
 
    request {
         fd: fd;
-        nbytes: u16;
+        nbytes: u16 hex;
         zero: u16; 
    }
    reply {
@@ -66,7 +66,7 @@ msg write {
 
    request {
         fd: fd;
-        nbytes: u16;
+        nbytes: u16 hex;
         zero: u16; 
    }
    reply {

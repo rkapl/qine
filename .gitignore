@@ -4,3 +4,6 @@
 /slib
 /.cache
 /src/messages/gen/*
+/qnx_util/*.o
+/qnx_util/term_test
+/tmp

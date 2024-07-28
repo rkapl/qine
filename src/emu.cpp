@@ -2,6 +2,7 @@
 #include <vector>
 #include <errno.h>
 #include <string.h>
+#include <sys/mman.h>
 
 #include "compiler.h"
 #include "emu.h"
@@ -36,7 +37,7 @@ void Emu::init() {
     size_t with_guard = MemOps::PAGE_SIZE + stack_size;
     m_emulation_stack->reserve(with_guard);
     m_emulation_stack->skip_paged(MemOps::PAGE_SIZE);
-    m_emulation_stack->grow_paged(Access::READ_WRITE, stack_size);
+    m_emulation_stack->grow_paged(PROT_READ | PROT_WRITE, stack_size);
 
     stack_t sas = {};
     sas.ss_size = MemOps::PAGE_SIZE*8;
@@ -56,7 +57,7 @@ void Emu::handle_guest_segv(GuestContext &ctx, siginfo_t *info) {
     // since we need to inspect all sigsegvs, we now need to emulate the behavior
     if (!act || is_special_sighandler(act->handler_fn)) {
         // sigsegv cannot be ignored/blocked
-        fprintf(stderr, "Sigsegv in guest code, si_code=%x\n", info->si_code);
+        fprintf(stderr, "Sigsegv in guest code, si_code=%x, fault_addr=%p\n", info->si_code, info->si_addr);
         ctx.dump(stderr);
         debug_hook_problem();
         abort();
@@ -102,12 +103,13 @@ qine_no_tls void Emu::handler_segv(int sig, siginfo_t *info, void *uctx_void)
     if (ctx.reg_es() == Qnx::MAGIC_PTR_SELECTOR) {
         // hack: migrate to LDT instead of patching the code
         ctx.reg_es() = Qnx::MAGIC_PTR_SELECTOR | 4;
-        //printf("Migrating to LDT @ %x\n", ctx.reg_eip());
+        // Log::dbg("Migrating ES to LDT @ %x\n", ctx.reg_eip());
         handled = true;
     }
 
     if (ctx.reg_ds() == Qnx::MAGIC_PTR_SELECTOR) {
-        ctx.reg_ds() = Qnx::MAGIC_PTR_SELECTOR | 4;
+        ctx.reg_ds() = Qnx::MAGIC_PTR_SELECTOR | SegmentDescriptor::SEL_LDT;
+        // Log::dbg("Migrating DS to LDT @ %x\n", ctx.reg_eip());
         handled = true;
     }
 
@@ -385,7 +387,7 @@ void Emu::syscall_yield(GuestContext &ctx) {
 void Emu::syscall_sendfdmx(GuestContext &ctx)
 {
     auto proc = Process::current();
-    uint32_t ds = ctx.reg_ds();
+    uint16_t ds = ctx.reg_ds();
     int fd = ctx.reg_edx();
     uint8_t send_parts = ctx.reg_ah();
     uint8_t recv_parts = ctx.reg_ch();
@@ -526,7 +528,6 @@ void Emu::syscall16_sendfdmx(GuestContext &ctx)
     uint16_t args[7];
     ctx.read_stack16(1, 7, args);
     
-    uint32_t ds = ctx.reg_ds();
     int fd = args[0];
     uint8_t send_parts = args[1];
     uint8_t recv_parts = args[2];
