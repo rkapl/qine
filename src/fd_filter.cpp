@@ -273,7 +273,6 @@ TerminalFilter::EscType TerminalFilter::parse_esc() {
             int etc = 1; // number of clicks, we are not counting that yet
             snprintf(mouse_msg, sizeof(mouse_msg), "\e[%d;%d;%d;%d;%dt", 31, row, column, qnx_btn >> 8, etc);
         }
-        fprintf(stderr, "%s\n", mouse_msg + 1);
         m_ready.insert(m_ready.end(), &mouse_msg[0], &mouse_msg[strlen(mouse_msg)]);
         drop(6);
         return EscType::RECOGNIZED;
