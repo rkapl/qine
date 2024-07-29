@@ -21,6 +21,7 @@ TerminalFilter::ReadContext::ReadContext():
 
 void TerminalFilter::ReadContext::setup(QnxFd& fd, int read_bytes, const termios& ts) {
     // TODO: check if file is non-blocking
+    // Log::dbg("cc[VTIME] = %d, cc[VMIN]=%d\n", ts.c_cc[VTIME], ts.c_cc[VMIN]);
     this->max_bytes = read_bytes;
     if (ts.c_cc[VMIN] == 0) {
         if (ts.c_cc[VTIME] == 0) {
@@ -28,9 +29,10 @@ void TerminalFilter::ReadContext::setup(QnxFd& fd, int read_bytes, const termios
             this->min_bytes = 0;
         } else {
             // read at least one byte or timeout
-            int r = clock_gettime(CLOCK_MONOTONIC, &deadline);
+            Timespec now;
+            int r = clock_gettime(CLOCK_MONOTONIC, &now);
             assert(r == 0);
-            deadline = deadline + Timespec::ms(ts.c_cc[VTIME] * 100);
+            deadline = Deadline(now + Timespec::ms(ts.c_cc[VTIME] * 100));
             this->min_bytes = 1;
         }
     } else {
@@ -116,10 +118,10 @@ bool TerminalFilter::common_read(MsgContext& ctx, QnxFd& fd, ReadContext& rc, Qn
         // then check for timeout
         Deadline deadline = rc.deadline;
         if (m_waiting_for_esc) {
-            deadline |= rc.deadline;
+            deadline |= Deadline(m_esc_start_time + esc_timeout);
         }
 
-        // Log::dbg("read min=%d, timeout=%d\n", (int)rc.min_bytes, rc.deadline.is_set());
+        // Log::dbg("read min=%d, timeout=%ld,%ld\n", (int)rc.min_bytes, rc.deadline.v.tv_sec, rc.deadline.v.tv_nsec);
         pollfd pfd = {
             .fd = fd.m_host_fd,
             .events = POLLIN,
@@ -136,14 +138,15 @@ bool TerminalFilter::common_read(MsgContext& ctx, QnxFd& fd, ReadContext& rc, Qn
             }
         } else if (deadline) {
             // timeout polling case
-            //Log::dbg("dd %ld %ld\n", deadline.tv_sec, deadline.tv_nsec);
+            // Log::dbg("now %ld %ld\n", now.tv_sec, now.tv_nsec);
+            // Log::dbg("dd %ld %ld\n", deadline.v.tv_sec, deadline.v.tv_nsec);
 
-            if (now >= deadline) {
+            if (now >= deadline.v) {
                 return true;
             }
             // and wait (we use poll to provide the timeout functionality) 
-            Timespec timeout = deadline - now;
-            //Log::dbg("timeout %ld %ld\r\n", timeout.tv_sec, timeout.tv_nsec);
+            Timespec timeout = deadline.v - now;
+            // Log::dbg("timeout %ld %ld\r\n", timeout.tv_sec, timeout.tv_nsec);
             
             r = ppoll(&pfd, 1, &timeout, NULL);
             if (r < 0) {
@@ -153,6 +156,7 @@ bool TerminalFilter::common_read(MsgContext& ctx, QnxFd& fd, ReadContext& rc, Qn
                 should_read_data = r > 0;
             }
         } else {
+            // Log::dbg("no deadline\n");
             // read without deadline
             should_read_data = true;
         }
@@ -209,6 +213,7 @@ void TerminalFilter::process(const Timespec& now) {
                         return;
                     }
                 } else {
+                    // Log::dbg("Starting to wait for rest of escape sequence\n");
                     m_esc_start_time = now;
                     m_waiting_for_esc = true;
                 }

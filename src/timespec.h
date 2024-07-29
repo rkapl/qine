@@ -28,7 +28,7 @@ struct Timespec: timespec {
     static const Timespec ZERO;
 
     static Timespec ms(int64_t ms) {
-        return Timespec(ms / 1000, ms % 1000 * 1000 * 1000);
+        return Timespec(ms / 1000, (ms % 1000) * 1000 * 1000);
     }
 
     Timespec operator+(const Timespec &b) const {
@@ -49,11 +49,11 @@ struct Timespec: timespec {
 };
 
 /** An absolute timespec or no deadline at all */
-struct Deadline: Timespec {
-    Deadline(): m_deadline(0, 0) {}
-    Deadline(const Timespec& ts): m_deadline(ts) {
+struct Deadline {
+    Deadline(): v(0, 0) {}
+    Deadline(const Timespec& ts): v(ts) {
     }
-    operator bool() const { return m_deadline.tv_sec != 0 || m_deadline.tv_nsec != 0;}
+    operator bool() const { return v.tv_sec != 0 || v.tv_nsec != 0;}
     bool is_set() const {return *this;}
     /** Combine with another deadline to preserve the strictes (nearest) one */
     void operator|=(const Deadline &b) {
@@ -61,6 +61,5 @@ struct Deadline: Timespec {
             *this = b;
         }
     }
-private:
-    Timespec m_deadline;
+    Timespec v;
 };
