@@ -26,9 +26,13 @@ Source0:        %{name}-%{version}.tar.xz
 %install
 %cmake_install
 
+mkdir -p "%{buildroot}/usr/share/qine/terminfo"
+tar -C "%{buildroot}/usr/share/qine/terminfo" -xf terminfo/terminfo.tar.xz
+
 %files
 %license COPYING.txt
 /usr/bin/qine
+/usr/share/qine
 
 %changelog
 
