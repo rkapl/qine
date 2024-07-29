@@ -34,6 +34,9 @@ xterm|xterm-256-color|QNX xterm, but in application mode with fixed keys,
 	smam=\E[?7h, rmam=\E[?7l, enacs=\E(B\E)0,
 # Enable application mode
 	smkx=\E[?1h\E=, rmkx=\E[?1l\E>,
+# Mappings for QED (+ = F12)
+    kslt=\E[24~,
+#   kf12=\E[24~,
 # Inser/delete
 	kdch1=\E[3~, kdl1=\E[3;5~, kich1=\E[2~, kil1=\E[2;5~,
 # Cursor and pagination
@@ -49,7 +52,7 @@ xterm|xterm-256-color|QNX xterm, but in application mode with fixed keys,
 	kcbt=\E[Z, 
 # Function Keys
 	kf1=\EOP, kf10=\E[21~,
-	kf11=\E[23~, kf12=\E[24~, kf13=\E[1;2P, kf14=\E[1;2Q,
+	kf11=\E[23~, kf13=\E[1;2P, kf14=\E[1;2Q,
 	kf15=\E[1;2R, kf16=\E[1;2S, kf17=\E[15;2~, kf18=\E[17;2~,
 	kf19=\E[18;2~, kf2=\EOQ, kf20=\E[19;2~, kf21=\E[20;2~,
 	kf22=\E[21;2~, kf23=\E[23;2~, kf24=\E[24;2~,
