@@ -37,7 +37,7 @@ d8ba0072383eecf7ce7b52116f40e1c3430980a1cb12a691c91c4fa9316f2a4a Slib16
 69e9084c8c41e33df222a0eadbe6122a62536872ebc066a32eaef74be17b83c6 Slib32
 ```
 
-If you have a different QNX version, you might be able to use the Slib, even if it is not tested. To get its entry parameter, run the `Slib32` or `Slib16` as an exutable and you will get an output like this:
+If you have a different QNX version, you might be able to use the Slib, even if it is not tested. To get its entry parameter, run the `Slib32` or `Slib16` as an executable and you will get an output like this:
 
 ```
 Attaching name qnx/syslib
@@ -59,7 +59,7 @@ Supported:
 - Fork, exec and spawn
 - Terminal (tcgetattr etc.)
 - 16-bit binaries
-- binaries with relocations
+- Binaries with relocations
 - Basic segment operations, like growing
 
 Not suported (list not complete :)
@@ -70,24 +70,28 @@ Not suported (list not complete :)
 ## Terminal support
 
 I assume you are using terminal emulator like xterm. Most modern emulators (Konsole, Gnome-Terminal etc.)
-support the xterm extension and report as xterm.
+support the xterm extensions and report themselves as xterm.
 
 In that case, you will get things like bash or elvis running pretty succesfully, as QNX has xterm in its terminfo
 database out of the box.
 
 However, the definitions are mediocre and do not match the default xterm behavior in some cases (mouse, alt key reporting).
-I suggest to use the xterm definitions `terminfo.tar.xz`, either by copying it to QNX root, or by specifying `TERMINFO` environment variable.
+I suggest to use the Qine's xterm definitions `terminfo.tar.xz`, either by copying them to QNX root,
+or by specifying `TERMINFO` environment variable.
 
 In my experience, this will get you up and running with stuff like QED or VEDIT. One important thing that will not work is mouse-drag events,
 so you will not be e.g. able to select text or move scrollbars fluently. To overcome this, `qine` comes
 with QNX mouse reporting emulation. Specify `--term-emu` to QINE to get this behavior. It will also override the `TERM` variable
-to something like `xterm-qine`, which is also supplies in our terminfo definitions.
+to something like `xterm-qine`, which is also supplied in our terminfo definitions.
 
 *Note:* Modern definitions from your box cannot be used, as QNX has some "pecularities", e.g. in where it expects the mouse capabilities to go.
 
 ## Compilation
 Qine is a standard CMake application. You can build it e.g using:
+
 ```
 cmake -B build-dir
 cmake --build build-dir
 ```
+
+Python3 and python-lark is required for build.
