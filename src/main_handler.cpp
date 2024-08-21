@@ -1393,6 +1393,20 @@ void MainHandler::io_stat(MsgContext& i) {
     }
 
     transfer_stat(reply.m_stat, sb);
+    if (S_ISLNK(sb.st_mode)) {
+        std::string path;
+        // return the length of the mapped path, so that readlink and stat are consistent with each other
+        if (Fsutil::readlink(p.host_path(), path)) {
+            if (path.empty() || path[0] == '/') {
+                auto qnx_path = i.proc().path_mapper().map_path_to_qnx(path.c_str());
+                reply.m_stat.m_size = strlen(qnx_path.qnx_path());
+            }
+        } else {
+            // silently leave the old length in state
+        }
+        
+    }
+
     reply.m_status = Qnx::QEOK;
     i.msg().write_type(0, &reply);
 }
@@ -1402,7 +1416,7 @@ void MainHandler::io_fstat(MsgContext& i) {
     i.msg().read_type(&msg);
     struct stat sb;
 
-    // TODO: handle trailing /
+    // TODO: handle trailing /, and handle special no-follow open modes (i think QNX has those)
 
     QnxMsg::io::fstat_reply reply;
     memset(&reply, 0, sizeof(reply));
@@ -1906,9 +1920,11 @@ void MainHandler::fsys_unlink(MsgContext &i) {
 
     auto p = i.proc().path_mapper().map_path_to_host(msg.m_path, true);
 
-    int r = unlink(p.host_path());
-    if (r < 0 && errno == EISDIR) {
+    int r;
+    if (msg.m_args.m_mode == Qnx::QS_QNX_SPECIAL) {
         r = rmdir(p.host_path());
+    } else {
+        unlink(p.host_path());
     }
 
     if (r == 0) {

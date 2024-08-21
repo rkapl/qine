@@ -9,7 +9,7 @@ exec env "PATH=/bin:/usr/bin" \
     -ex 'b Emu::debug_hook_problem' \
     -ex 'set disassembly-flavor intel' \
     --args build/qine \
-    -m /,$QNX_ROOT \
+    -m /,$QNX_ROOT -m /host,/,exec=qnx \
     $QNX_SLIB \
     "$@"
 
