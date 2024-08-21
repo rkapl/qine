@@ -166,7 +166,7 @@ void PathMapper::map_path_to_qnx(PathInfo &map) {
         map.m_prefix = nullptr;
         map.m_qnx_unmappable = true;
         map.m_qnx_path.clear();
-        map.m_qnx_path.append("/unmapped");
+        map.m_qnx_path.append("/unmapped/");
         map.m_qnx_path.append(map.m_host_path);
         Log::if_enabled(Log::MAP, [&](FILE *stream) {
             fprintf(stream, "Unmappable host:%s\n", map.host_path());
