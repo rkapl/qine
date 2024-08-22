@@ -446,7 +446,7 @@ void loader_check_interpreter(int fd, InterpreterInfo *interp_out) {
 
     // skip to the end
     const char *args_start = c;
-    while (isspace(*c) && *c != 0)
+    while (*c != '\n' && *c != 0)
         c++;
 
     // we inserted the null terminator

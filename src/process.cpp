@@ -166,8 +166,8 @@ void Process::load_executable(const PathInfo &path) {
 
     fd = UniqueFd(open(current_path->host_path(), O_RDONLY));
         if (!fd.valid()) {
-        perror("interpreter open");
-        throw LoaderFormatException("Failed to open interpreter for loading");
+        perror("executable open");
+        throw LoaderFormatException("Failed to open executable for loading");
     }
     loader_load(fd.get(), &m_load_exec, false);
     std::string realpath;
@@ -477,7 +477,7 @@ void Process::setup_startup_context(int argc, char **argv)
 
     /* Append argv after the spawn message */
     auto push_arg = [&](const char *c) {
-        // printf("Adding arg %s\n", c);
+        // printf("Adding arg '%s'\n", c);
         alloc.push_string(c);
         argv_offsets.push_back(alloc.offset());
     };
@@ -499,7 +499,7 @@ void Process::setup_startup_context(int argc, char **argv)
 
     /* Append environment after the spawn message */
     auto push_env = [&](const char *c) {
-        //printf("pushing env %s\n", c);
+        // printf("pushing env %s\n", c);
         alloc.push_string(c);
         envp_offsets.push_back(alloc.offset());
     };
@@ -554,7 +554,7 @@ void Process::setup_startup_context(int argc, char **argv)
 
         push_pointer_block(envp_offsets);
         push_pointer_block(argv_offsets);
-        ctx.push_stack(argc);
+        ctx.push_stack(argv_offsets.size());
     }
 
     /* Entry points*/
