@@ -429,25 +429,33 @@ void loader_check_interpreter(int fd, InterpreterInfo *interp_out) {
 
     // skip to the interpreter
     char *c = interp_buf.get();
-    while (isspace(*c) && *c != 0)
+    auto end = [&c] { return *c == 0 || *c == '\n'; };
+    while (isspace(*c) && !end())
         c++;
 
     // read the interpreter body
     const char *interp_start = c;
-    while(!isspace(*c) && *c != 0)
+    while(!isspace(*c) && !end())
         c++;
     
-    // skip to the args and insert separator
+    // skip to the whitespace and replace it with null separator
+    // (so that we can use the interpreter as c string)
     const char *interp_end = c;
-    while (isspace(*c) && *c != 0) {
+    while (isspace(*c) && !end()) {
         *c = 0;
         c++;
     }
 
     // skip to the end
     const char *args_start = c;
-    while (*c != '\n' && *c != 0)
+    while (!end())
         c++;
+
+    *c = 0;
+
+    if (*interp_start == 0) {
+        throw LoaderFormatException("Invalid shebang");
+    }
 
     // we inserted the null terminator
     interp_out->interpreter = PathInfo::mk_qnx_path(interp_start);
