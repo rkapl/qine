@@ -411,7 +411,7 @@ void Process::update_timesel() {
     t->nsec = now.tv_nsec;
     t->nsec_inc = 0;
     t->cycles_per_sec = 1000;
-    int64_t cycles = t->seconds * 1000 + static_cast<int64_t>(now.tv_nsec) / 1000 / 1000;
+    int64_t cycles = static_cast<int64_t>(t->seconds) * 1000 + static_cast<int64_t>(now.tv_nsec) / 1000 / 1000;
     t->cycle_lo = cycles;
     t->cycle_hi = cycles >> 32;
 }

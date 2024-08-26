@@ -19,8 +19,8 @@ os.chdir(c_test)
 
 qnx = Path(os.environ['QNX_ROOT'])
 slib_spec = shlex.split(os.environ['QNX_SLIB'])
-qine = c_test / '../build/qine'
-build = c_test / 'build'
+qine = (c_test / '../build/qine').absolute()
+build = (c_test / 'build').absolute()
 cc =  '/bin/cc'
 qine_cmd = [qine] + slib_spec + [
     '-m', f'/,{qnx}', 
