@@ -1924,7 +1924,7 @@ void MainHandler::fsys_unlink(MsgContext &i) {
     if (msg.m_args.m_mode == Qnx::QS_QNX_SPECIAL) {
         r = rmdir(p.host_path());
     } else {
-        unlink(p.host_path());
+        r = unlink(p.host_path());
     }
 
     if (r == 0) {
