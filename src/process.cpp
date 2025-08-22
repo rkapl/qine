@@ -317,7 +317,7 @@ void Process::setup_magic16(SegmentDescriptor *data_sd, StartupSbrk& alloc)
      */
     create_segment_descriptor_at(Access::READ_ONLY, m_magic_pointer, B32, SegmentDescriptor::sel_to_id(Qnx::MAGIC_PTR_SELECTOR));
 
-    for (size_t i = 0; i < sizeof(*m_magic16) / 4; i++) {
+    for (size_t i = 0; i < 20; i++) {
         // this helps us identify the values we filled out wrong down the line
         m_magic16->sptrs[i].m_segment = 0xDEA0 + i;
     }
