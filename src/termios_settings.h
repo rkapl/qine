@@ -1,7 +1,7 @@
 #include "cpp.h"
 #pragma 
 
-#include <termio.h>
+#include <termios.h>
 #include <gen_msg/dev.h>
 
 /** RAII guard that applies temporary termios settings */

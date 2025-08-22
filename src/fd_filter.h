@@ -4,7 +4,7 @@
 #include "msg_handler.h"
 #include "gen_msg/dev.h"
 #include "timespec.h"
-#include <termio.h>
+#include <termios.h>
 #include <vector>
 
 class QnxFd;
