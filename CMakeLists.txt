@@ -1,12 +1,13 @@
-cmake_minimum_required(VERSION 3.19...3.27)
+cmake_minimum_required(VERSION 3.19...4.1)
 
 find_package(Python3 3.9 COMPONENTS Interpreter)
 message("Using Python ${Python3_EXECUTABLE}")
 
 project(
-  quine
+  qine
   VERSION 0.1
   LANGUAGES CXX)
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 
 set(MSG_TYPES io proc dev fsys common)
 list(TRANSFORM MSG_TYPES PREPEND ${PROJECT_SOURCE_DIR}/msg/ OUTPUT_VARIABLE MSG_DEFS)
@@ -63,5 +64,8 @@ set_target_properties(qine PROPERTIES CXX_EXTENSIONS OFF)
 # We are runnign on x86 and it make sense for accessing msg member
 set_target_properties(qine PROPERTIES COMPILE_FLAGS -Wno-address-of-packed-member)
 #set_target_properties(qine PROPERTIES LINK_FLAGS -m32)
+
+set_target_properties(qine PROPERTIES COMPILE_FLAGS "-ffunction-sections -fdata-sections -g")
+set_target_properties(qine PROPERTIES LINK_FLAGS -Wl,--gc-sections)
 
 install(TARGETS qine)
